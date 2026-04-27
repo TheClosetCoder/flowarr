@@ -6,7 +6,9 @@ namespace Flowarr.Api.Controllers;
 
 [ApiController]
 [Route("api/connections")]
-public sealed class ConnectionsController(IConnectionSettingsService connectionSettingsService) : ControllerBase
+public sealed class ConnectionsController(
+    IConnectionSettingsService connectionSettingsService,
+    IConnectionTestService connectionTestService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -61,11 +63,23 @@ public sealed class ConnectionsController(IConnectionSettingsService connectionS
         return NoContent();
     }
 
+    [HttpPost("qbittorrent/test")]
+    public async Task<ActionResult<ConnectionTestResult>> TestQBittorrent(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken)
+    {
+        return await connectionTestService.TestTorrentClientAsync(request, cancellationToken);
+    }
+
     [HttpPut("sftp-seedbox")]
     public async Task<IActionResult> SaveSftpSeedbox(SaveSftpSeedboxConnectionRequest request, CancellationToken cancellationToken)
     {
         await connectionSettingsService.SaveSftpSeedboxAsync(request, cancellationToken);
         return NoContent();
+    }
+
+    [HttpPost("sftp-seedbox/test")]
+    public async Task<ActionResult<ConnectionTestResult>> TestSftpSeedbox(SaveSftpSeedboxConnectionRequest request, CancellationToken cancellationToken)
+    {
+        return await connectionTestService.TestSftpSeedboxAsync(request, cancellationToken);
     }
 
     [HttpPut("auto-download")]

@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, Download, FolderDown, HardDrive, Plug, Settings, ShieldCheck, Trash2 } from "lucide-react";
+import { Activity, Check, ChevronUp, Download, FolderDown, FolderOpen, HardDrive, Plug, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import "./styles.css";
 
 type DashboardSummary = {
@@ -21,6 +21,9 @@ type DashboardDownload = { id: string; client: string; name: string; status: str
 type DownloadItem = { id: string; name: string; client: string; status: string; progress: number; sizeBytes: number; remotePath?: string };
 type StorageLocation = { id: string; name: string; kind: string | number; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
 type RemoteTransfer = { id: string; provider: string; remotePath: string; localPath: string; bytesTransferred: number; status: string; message?: string; createdAt: string; completedAt?: string };
+type LocalFolderListing = { currentPath: string; parentPath?: string; entries: LocalFolderEntry[] };
+type LocalFolderEntry = { name: string; path: string };
+type ConnectionTestResult = { ok: boolean; message: string };
 type LocalMediaPath = { id?: string; enabled: boolean; name: string; path: string; role: string };
 type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
 type TransferRule = { id?: string; enabled: boolean; name: string; remotePathPrefix: string; localPath: string };
@@ -215,8 +218,12 @@ function normalizeConnectionSettings(settings: RawConnectionSettings): Connectio
   };
 }
 
-async function postJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiBase}${path}`, { method: "POST" });
+async function postJson<T>(path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${apiBase}${path}`, {
+    method: "POST",
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
   if (!response.ok) throw new Error(`Request failed: ${path}`);
   return response.json();
 }
@@ -305,6 +312,21 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
     setMessage("Torrent client saved securely.");
   }
 
+  async function testTorrentClient() {
+    setMessage("Testing torrent client...");
+    try {
+      const result = await postJson<ConnectionTestResult>("/api/connections/qbittorrent/test", {
+        ...qbittorrent,
+        clientType: qbittorrent.clientType || "Deluge",
+        baseUrl: qbittorrent.baseUrl || "",
+        username: qbittorrent.clientType === "Deluge" ? "" : qbittorrent.username || ""
+      });
+      setMessage(`${result.ok ? "Torrent test passed" : "Torrent test failed"}: ${result.message}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Torrent test failed.");
+    }
+  }
+
   async function saveSeedbox() {
     setMessage("Saving seedbox...");
     await putJson("/api/connections/sftp-seedbox", {
@@ -317,6 +339,23 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
     });
     await onSaved();
     setMessage("Seedbox saved securely.");
+  }
+
+  async function testSeedbox() {
+    setMessage("Testing SFTP seedbox...");
+    try {
+      const result = await postJson<ConnectionTestResult>("/api/connections/sftp-seedbox/test", {
+        ...sftpSeedbox,
+        host: sftpSeedbox.host || "",
+        port: Number(sftpSeedbox.port) || 22,
+        username: sftpSeedbox.username || "",
+        privateKeyPath: sftpSeedbox.privateKeyPath || "",
+        remoteRootPath: sftpSeedbox.remoteRootPath || ""
+      });
+      setMessage(`${result.ok ? "SFTP test passed" : "SFTP test failed"}: ${result.message}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "SFTP test failed.");
+    }
   }
 
   async function saveAutoDownload() {
@@ -373,7 +412,10 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
                 Clear saved password
               </label>
             )}
-            <button onClick={saveTorrentClient} className="w-fit rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save torrent client</button>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={saveTorrentClient} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save torrent client</button>
+              <button onClick={testTorrentClient} className="rounded border border-line px-4 py-2 text-sm font-medium">Test connection</button>
+            </div>
           </div>
         </div>
 
@@ -405,7 +447,10 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
                 </label>
               )}
             </div>
-            <button onClick={saveSeedbox} className="w-fit rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save seedbox</button>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={saveSeedbox} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save seedbox</button>
+              <button onClick={testSeedbox} className="rounded border border-line px-4 py-2 text-sm font-medium">Test connection</button>
+            </div>
           </div>
         </div>
       </div>
@@ -421,7 +466,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             <input type="checkbox" checked={autoDownload.overwriteExisting} onChange={(event) => setAutoDownload({ ...autoDownload, overwriteExisting: event.target.checked })} />
             Overwrite existing files
           </label>
-          <Input label="Legacy fallback destination" value={autoDownload.localImportPath} onChange={(value) => setAutoDownload({ ...autoDownload, localImportPath: value })} placeholder="/media/import" />
+          <LocalPathInput label="Legacy fallback destination" value={autoDownload.localImportPath} onChange={(value) => setAutoDownload({ ...autoDownload, localImportPath: value })} placeholder="/media/import" />
           <Input label="Allowed extensions" value={autoDownload.allowedExtensionsText} onChange={(value) => setAutoDownload({ ...autoDownload, allowedExtensionsText: value })} placeholder=".mkv, .mp4, .srt" />
         </div>
         <div className="mt-5 space-y-3">
@@ -448,7 +493,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
                 Enabled
               </label>
               <Input label="Name" value={path.name} onChange={(value) => updateLocalMediaPath(index, { name: value })} placeholder="Movies" />
-              <Input label="Container path" value={path.path} onChange={(value) => updateLocalMediaPath(index, { path: value })} placeholder="/media/Movies" />
+              <LocalPathInput label="Container path" value={path.path} onChange={(value) => updateLocalMediaPath(index, { path: value })} placeholder="/media/Movies" />
               <Input label="Role" value={path.role} onChange={(value) => updateLocalMediaPath(index, { role: value })} placeholder="Movies" />
               <button
                 onClick={() => setAutoDownload({ ...autoDownload, localMediaPaths: autoDownload.localMediaPaths.filter((_, pathIndex) => pathIndex !== index) })}
@@ -484,16 +529,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
               </label>
               <Input label="Name" value={rule.name} onChange={(value) => updateTransferRule(index, { name: value })} placeholder="Movies" />
               <Input label="Remote folder" value={rule.remotePathPrefix} onChange={(value) => updateTransferRule(index, { remotePathPrefix: value })} placeholder="/downloads/movies" />
-              <label className="grid gap-1 text-sm">
-                <span className="text-slate-600">Local destination</span>
-                <input
-                  list="local-media-paths"
-                  value={rule.localPath}
-                  onChange={(event) => updateTransferRule(index, { localPath: event.target.value })}
-                  placeholder="/media/Movies"
-                  className="rounded border border-line px-3 py-2 text-ink outline-none focus:border-accent"
-                />
-              </label>
+              <LocalPathInput label="Local destination" value={rule.localPath} onChange={(value) => updateTransferRule(index, { localPath: value })} placeholder="/media/Movies" />
               <button
                 onClick={() => setAutoDownload({ ...autoDownload, transferRules: autoDownload.transferRules.filter((_, ruleIndex) => ruleIndex !== index) })}
                 className="self-end rounded border border-line px-3 py-2 text-sm"
@@ -504,11 +540,6 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
           ))}
         </div>
         <button onClick={saveAutoDownload} className="mt-4 rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save auto-download</button>
-        <datalist id="local-media-paths">
-          {autoDownload.localMediaPaths.map((path) => (
-            <option key={path.id ?? path.path} value={path.path}>{path.name}</option>
-          ))}
-        </datalist>
       </div>
 
       <div className="flex items-center gap-3">
@@ -546,6 +577,127 @@ function Input({ label, value, onChange, placeholder, type = "text" }: { label: 
         className="rounded border border-line px-3 py-2 text-ink outline-none focus:border-accent"
       />
     </label>
+  );
+}
+
+function LocalPathInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <div className="grid gap-1 text-sm">
+      <span className="text-slate-600">{label}</span>
+      <div className="flex gap-2">
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="min-w-0 flex-1 rounded border border-line px-3 py-2 text-ink outline-none focus:border-accent"
+        />
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title={`Browse ${label}`}
+          className="grid h-10 w-10 flex-none place-items-center rounded border border-line bg-white text-slate-700 hover:bg-panel"
+        >
+          <FolderOpen size={18} />
+        </button>
+      </div>
+      {open && (
+        <LocalFolderBrowser
+          initialPath={value || placeholder || "/media"}
+          onClose={() => setOpen(false)}
+          onSelect={(path) => {
+            onChange(path);
+            setOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function LocalFolderBrowser({ initialPath, onSelect, onClose }: { initialPath: string; onSelect: (path: string) => void; onClose: () => void }) {
+  const [listing, setListing] = React.useState<LocalFolderListing | null>(null);
+  const [currentPath, setCurrentPath] = React.useState(initialPath);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  const loadPath = React.useCallback(async (path: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const query = path ? `?path=${encodeURIComponent(path)}` : "";
+      const nextListing = await fetchJson<LocalFolderListing>(`/api/local-folders${query}`);
+      setListing(nextListing);
+      setCurrentPath(nextListing.currentPath || "");
+    } catch (err) {
+      setListing(null);
+      setError(err instanceof Error ? err.message : "Unable to browse folder.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void loadPath(initialPath);
+  }, [initialPath, loadPath]);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-4 py-6">
+      <div className="w-full max-w-2xl overflow-hidden rounded border border-line bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <div className="min-w-0">
+            <h3 className="font-medium">Browse local folders</h3>
+            <p className="truncate text-xs text-slate-500">{listing?.currentPath || "Available roots"}</p>
+          </div>
+          <button type="button" onClick={onClose} title="Close" className="grid h-9 w-9 place-items-center rounded border border-line">
+            <X size={17} />
+          </button>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto p-4">
+          {error && (
+            <div className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-warn">
+              {error}
+            </div>
+          )}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => void loadPath("")} className="rounded border border-line px-3 py-2 text-sm">Roots</button>
+            {listing?.parentPath && (
+              <button type="button" onClick={() => void loadPath(listing.parentPath!)} className="inline-flex items-center gap-2 rounded border border-line px-3 py-2 text-sm">
+                <ChevronUp size={16} />
+                Up
+              </button>
+            )}
+            {currentPath && (
+              <button type="button" onClick={() => onSelect(currentPath)} className="inline-flex items-center gap-2 rounded bg-accent px-3 py-2 text-sm font-medium text-white">
+                <Check size={16} />
+                Select
+              </button>
+            )}
+          </div>
+          {loading ? (
+            <p className="text-sm text-slate-600">Loading folders...</p>
+          ) : (
+            <div className="space-y-2">
+              {(listing?.entries ?? []).length ? (listing?.entries ?? []).map((entry) => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  onClick={() => void loadPath(entry.path)}
+                  className="flex w-full items-center gap-3 rounded border border-line px-3 py-2 text-left text-sm hover:bg-panel"
+                >
+                  <FolderOpen size={17} className="text-accent" />
+                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                  <span className="hidden max-w-xs truncate text-xs text-slate-500 sm:block">{entry.path}</span>
+                </button>
+              )) : (
+                <p className="rounded bg-panel px-3 py-2 text-sm text-slate-600">No folders found here.</p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
