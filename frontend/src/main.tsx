@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, Database, Download, HardDrive, Plug, Settings, ShieldCheck, Trash2 } from "lucide-react";
+import { Activity, Download, FolderDown, HardDrive, Plug, Settings, ShieldCheck, Trash2 } from "lucide-react";
 import "./styles.css";
 
 type DashboardSummary = {
@@ -16,6 +16,8 @@ type RecentImport = { mediaItemId: string; title: string; importedAt: string };
 type CleanupCandidateSummary = { id: string; path: string; sizeBytes: number; reason: string; confidence: string; dryRun: boolean };
 type DownloadItem = { id: string; name: string; client: string; status: string; progress: number; sizeBytes: number; remotePath?: string };
 type StorageLocation = { id: string; name: string; kind: string | number; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
+type RemoteTransfer = { id: string; provider: string; remotePath: string; localPath: string; bytesTransferred: number; status: string; message?: string; createdAt: string; completedAt?: string };
+type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -32,13 +34,17 @@ function App() {
   const [downloads, setDownloads] = React.useState<DownloadItem[]>([]);
   const [storage, setStorage] = React.useState<StorageLocation[]>([]);
   const [candidates, setCandidates] = React.useState<CleanupCandidateSummary[]>([]);
+  const [transfers, setTransfers] = React.useState<RemoteTransfer[]>([]);
+  const [transferSettings, setTransferSettings] = React.useState<TransferSettings | null>(null);
 
   React.useEffect(() => {
     void Promise.all([
       fetchJson<DashboardSummary>("/api/dashboard").then(setDashboard),
       fetchJson<DownloadItem[]>("/api/downloads").then(setDownloads),
       fetchJson<StorageLocation[]>("/api/storage").then(setStorage),
-      fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates").then(setCandidates)
+      fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates").then(setCandidates),
+      fetchJson<RemoteTransfer[]>("/api/transfers").then(setTransfers),
+      fetchJson<TransferSettings>("/api/transfers/settings").then(setTransferSettings)
     ]);
   }, []);
 
@@ -47,6 +53,7 @@ function App() {
     { name: "Connections", icon: Plug },
     { name: "Storage", icon: HardDrive },
     { name: "Downloads", icon: Download },
+    { name: "Transfers", icon: FolderDown },
     { name: "Cleanup", icon: Trash2 },
     { name: "Settings", icon: Settings }
   ];
@@ -104,8 +111,9 @@ function App() {
           {activePage === "Connections" && <Connections />}
           {activePage === "Storage" && <Storage storage={storage} />}
           {activePage === "Downloads" && <Downloads downloads={downloads} />}
+          {activePage === "Transfers" && <Transfers transfers={transfers} settings={transferSettings} />}
           {activePage === "Cleanup" && <Cleanup candidates={candidates} setCandidates={setCandidates} />}
-          {activePage === "Settings" && <SettingsPanel />}
+          {activePage === "Settings" && <SettingsPanel transferSettings={transferSettings} />}
         </div>
       </main>
     </div>
@@ -138,7 +146,7 @@ function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
 }
 
 function Connections() {
-  const integrations = ["qBittorrent", "Radarr", "Sonarr", "Plex", "Jellyfin"];
+  const integrations = ["qBittorrent", "Radarr", "SFTP seedbox", "Sonarr", "Plex", "Jellyfin"];
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {integrations.map((name) => (
@@ -160,6 +168,29 @@ function Storage({ storage }: { storage: StorageLocation[] }) {
 
 function Downloads({ downloads }: { downloads: DownloadItem[] }) {
   return <Table rows={downloads.map((item) => [item.name, item.client, item.status, `${Math.round(item.progress * 100)}%`, formatBytes(item.sizeBytes), item.remotePath ?? ""])} headers={["Name", "Client", "Status", "Progress", "Size", "Remote path"]} />;
+}
+
+function Transfers({ transfers, settings }: { transfers: RemoteTransfer[]; settings: TransferSettings | null }) {
+  return (
+    <section className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Metric title="Auto download" value={settings?.enabled ? "Enabled" : "Disabled"} sub={settings?.sftpSeedbox.configured ? "SFTP configured" : "SFTP not configured"} />
+        <Metric title="Plex import path" value={settings?.localImportPath ?? "/plex/import"} sub="Downloaded files land here" />
+        <Metric title="Completed transfers" value={String(transfers.filter((item) => item.status === "Completed").length)} sub="Skipped files are tracked too" />
+      </div>
+      <Table
+        rows={transfers.map((item) => [
+          item.status,
+          item.provider,
+          item.remotePath,
+          item.localPath,
+          formatBytes(item.bytesTransferred),
+          item.message ?? ""
+        ])}
+        headers={["Status", "Provider", "Remote path", "Local path", "Bytes", "Message"]}
+      />
+    </section>
+  );
 }
 
 function Cleanup({ candidates, setCandidates }: { candidates: CleanupCandidateSummary[]; setCandidates: (items: CleanupCandidateSummary[]) => void }) {
@@ -194,11 +225,22 @@ function Cleanup({ candidates, setCandidates }: { candidates: CleanupCandidateSu
   );
 }
 
-function SettingsPanel() {
+function SettingsPanel({ transferSettings }: { transferSettings: TransferSettings | null }) {
   return (
-    <section className="rounded border border-line bg-white p-5">
-      <h3 className="font-medium">Runtime configuration</h3>
-      <p className="mt-2 text-sm text-slate-600">Configure PostgreSQL, qBittorrent, Radarr, storage paths, and dry-run behavior with environment variables in Docker Compose.</p>
+    <section className="space-y-4">
+      <div className="rounded border border-line bg-white p-5">
+        <h3 className="font-medium">Runtime configuration</h3>
+        <p className="mt-2 text-sm text-slate-600">Configure PostgreSQL, qBittorrent, Radarr, SFTP seedbox access, storage paths, and dry-run behavior with environment variables in Docker Compose.</p>
+      </div>
+      <div className="rounded border border-line bg-white p-5">
+        <h3 className="font-medium">Auto download</h3>
+        <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
+          <p>Enabled: {String(transferSettings?.enabled ?? false)}</p>
+          <p>SFTP configured: {String(transferSettings?.sftpSeedbox.configured ?? false)}</p>
+          <p>Host: {transferSettings?.sftpSeedbox.host || "not set"}</p>
+          <p>Local import: {transferSettings?.localImportPath ?? "/plex/import"}</p>
+        </div>
+      </div>
     </section>
   );
 }

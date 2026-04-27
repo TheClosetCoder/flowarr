@@ -30,12 +30,23 @@ services:
       Flowarr__Storage__LocalPath: /media
       Flowarr__Storage__SeedboxPathOrEndpoint: ${FLOWARR_SEEDBOX_PATH_OR_ENDPOINT:-/seedbox}
       Flowarr__Cleanup__DryRun: "true"
+      Flowarr__AutoDownload__Enabled: ${FLOWARR_AUTO_DOWNLOAD_ENABLED:-false}
+      Flowarr__AutoDownload__LocalImportPath: /plex/import
+      Flowarr__AutoDownload__OverwriteExisting: ${FLOWARR_AUTO_DOWNLOAD_OVERWRITE_EXISTING:-false}
+      Flowarr__SftpSeedbox__Host: ${FLOWARR_SFTP_HOST:-}
+      Flowarr__SftpSeedbox__Port: ${FLOWARR_SFTP_PORT:-22}
+      Flowarr__SftpSeedbox__Username: ${FLOWARR_SFTP_USERNAME:-}
+      Flowarr__SftpSeedbox__Password: ${FLOWARR_SFTP_PASSWORD:-}
+      Flowarr__SftpSeedbox__PrivateKeyPath: ${FLOWARR_SFTP_PRIVATE_KEY_PATH:-}
+      Flowarr__SftpSeedbox__RemoteRootPath: ${FLOWARR_SFTP_REMOTE_ROOT_PATH:-}
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ${FLOWARR_LOCAL_MEDIA_PATH:-./data/media}:/media:ro
+      - ${FLOWARR_PLEX_IMPORT_PATH:-./data/plex-import}:/plex/import
       - ${FLOWARR_SEEDBOX_MOUNT_PATH:-./data/seedbox}:/seedbox:ro
+      - ${FLOWARR_SFTP_PRIVATE_KEY_HOST_PATH:-./data/keys}:/keys:ro
     ports:
       - "8080:8080"
 

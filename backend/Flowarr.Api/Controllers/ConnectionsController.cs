@@ -16,6 +16,14 @@ public sealed class ConnectionsController(IOptions<IntegrationOptions> options) 
         {
             qBittorrent = new { configured = HasValue(value.QBittorrent.BaseUrl), value.QBittorrent.BaseUrl },
             radarr = new { configured = HasValue(value.Radarr.BaseUrl) && HasValue(value.Radarr.ApiKey), value.Radarr.BaseUrl },
+            sftpSeedbox = new
+            {
+                configured = HasValue(value.SftpSeedbox.Host) &&
+                             HasValue(value.SftpSeedbox.Username) &&
+                             (HasValue(value.SftpSeedbox.Password) || HasValue(value.SftpSeedbox.PrivateKeyPath)),
+                value.SftpSeedbox.Host,
+                value.SftpSeedbox.Port
+            },
             sonarr = new { configured = false, status = "placeholder" },
             plex = new { configured = false, status = "placeholder" },
             jellyfin = new { configured = false, status = "placeholder" }

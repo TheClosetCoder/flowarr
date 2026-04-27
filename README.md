@@ -13,6 +13,7 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 - Tracks media items, downloads, media files, storage locations, cleanup candidates, and audit logs.
 - Runs scheduled sync jobs through a .NET hosted service.
 - Starts with mock qBittorrent and Radarr integrations when credentials are not configured.
+- Can auto-download completed seedbox files over SFTP into a local Plex import folder.
 - Generates cleanup recommendations without deleting automatically.
 
 ## What Flowarr Does Not Do
@@ -50,6 +51,16 @@ FLOWARR_RADARR_API_KEY=
 FLOWARR_LOCAL_MEDIA_PATH=./data/media
 FLOWARR_SEEDBOX_MOUNT_PATH=./data/seedbox
 FLOWARR_SEEDBOX_PATH_OR_ENDPOINT=/seedbox
+FLOWARR_AUTO_DOWNLOAD_ENABLED=false
+FLOWARR_PLEX_IMPORT_PATH=./data/plex-import
+FLOWARR_AUTO_DOWNLOAD_OVERWRITE_EXISTING=false
+FLOWARR_SFTP_HOST=
+FLOWARR_SFTP_PORT=22
+FLOWARR_SFTP_USERNAME=
+FLOWARR_SFTP_PASSWORD=
+FLOWARR_SFTP_PRIVATE_KEY_PATH=
+FLOWARR_SFTP_PRIVATE_KEY_HOST_PATH=./data/keys
+FLOWARR_SFTP_REMOTE_ROOT_PATH=
 ```
 
 The API also supports .NET environment variable binding:
@@ -59,7 +70,41 @@ ConnectionStrings__Flowarr=Host=postgres;Port=5432;Database=flowarr;Username=flo
 Flowarr__Cleanup__DryRun=true
 Flowarr__Storage__LocalPath=/media
 Flowarr__Storage__SeedboxPathOrEndpoint=/seedbox
+Flowarr__AutoDownload__Enabled=false
+Flowarr__AutoDownload__LocalImportPath=/plex/import
 ```
+
+## Ultra.cc / UltraSeedbox SFTP Auto-Download
+
+Flowarr can pull completed or seeding downloads from a remote seedbox over SFTP into a local Plex import folder.
+
+Set these values in `.env`:
+
+```bash
+FLOWARR_AUTO_DOWNLOAD_ENABLED=true
+FLOWARR_PLEX_IMPORT_PATH=/path/on/your/docker-host/plex-import
+FLOWARR_SFTP_HOST=your-ultra-sftp-host
+FLOWARR_SFTP_PORT=22
+FLOWARR_SFTP_USERNAME=your-ultra-username
+FLOWARR_SFTP_PASSWORD=your-ultra-password
+FLOWARR_SFTP_REMOTE_ROOT_PATH=/path/to/completed/downloads
+```
+
+For private key auth, mount a host key folder and point Flowarr at the in-container key path:
+
+```bash
+FLOWARR_SFTP_PRIVATE_KEY_HOST_PATH=/path/on/host/keys
+FLOWARR_SFTP_PRIVATE_KEY_PATH=/keys/id_rsa
+FLOWARR_SFTP_PASSWORD=
+```
+
+Auto-download behavior:
+
+- It only processes downloads marked complete or seeding.
+- It downloads into `/plex/import` inside the API container, backed by `FLOWARR_PLEX_IMPORT_PATH` on the Docker host.
+- It skips existing files unless `FLOWARR_AUTO_DOWNLOAD_OVERWRITE_EXISTING=true`.
+- It records completed, skipped, and failed transfers in the transfer log and audit log.
+- It does not delete anything from the seedbox.
 
 ## MVP Cleanup Rules
 

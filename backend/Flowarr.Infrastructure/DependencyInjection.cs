@@ -21,13 +21,21 @@ public static class DependencyInjection
 
         services.AddDbContext<FlowarrDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<ICleanupRecommendationService, CleanupRecommendationService>();
-        services.AddScoped<IDownloadClient, MockDownloadClient>();
+        services.AddScoped<IDownloadClient>(provider =>
+        {
+            var configuredOptions = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<IntegrationOptions>>();
+            return string.IsNullOrWhiteSpace(configuredOptions.Value.QBittorrent.BaseUrl)
+                ? new MockDownloadClient()
+                : ActivatorUtilities.CreateInstance<QBittorrentDownloadClient>(provider);
+        });
         services.AddScoped<IMediaCatalogClient, MockRadarrClient>();
+        services.AddScoped<IRemoteFileTransferClient, SftpSeedboxTransferClient>();
         services.AddScoped<LocalStorageScanner>();
         services.AddScoped<SeedboxStorageScanner>();
         services.AddScoped<IStorageScanner>(provider => provider.GetRequiredService<LocalStorageScanner>());
         services.AddScoped<IStorageScanner>(provider => provider.GetRequiredService<SeedboxStorageScanner>());
         services.AddHostedService<FlowarrSyncHostedService>();
+        services.AddHostedService<AutoDownloadHostedService>();
 
         return services;
     }
