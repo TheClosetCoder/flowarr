@@ -3,6 +3,7 @@ using Flowarr.Core.Entities;
 using Flowarr.Core.Integrations;
 using Flowarr.Core.Models;
 using Flowarr.Infrastructure.Data;
+using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +20,7 @@ public sealed class DashboardController(
     [HttpGet]
     public async Task<ActionResult<DashboardSummary>> Get(CancellationToken cancellationToken)
     {
+        await LegacyMockDataCleaner.RemoveAsync(dbContext, cancellationToken);
         await RefreshDashboardSourcesAsync(cancellationToken);
 
         var storage = await dbContext.StorageLocations
@@ -31,12 +33,25 @@ public sealed class DashboardController(
             .ToListAsync(cancellationToken);
         var activeDownloads = downloads.Count(download => download.Status == DownloadStatus.Downloading);
 
-        var recentImports = await dbContext.MediaFiles
+        var mediaImports = await dbContext.MediaFiles
             .Where(file => file.ImportedLocally)
             .OrderByDescending(file => file.LastSeenAt)
             .Take(5)
             .Select(file => new RecentImport(file.MediaItemId, file.MediaItem!.Title, file.LastSeenAt))
             .ToListAsync(cancellationToken);
+        var completedTransfers = await dbContext.RemoteTransfers
+            .Where(transfer => transfer.Status == TransferStatus.Completed || transfer.Status == TransferStatus.Skipped)
+            .OrderByDescending(transfer => transfer.CompletedAt ?? transfer.CreatedAt)
+            .Take(5)
+            .ToListAsync(cancellationToken);
+        var recentImports = mediaImports
+            .Concat(completedTransfers.Select(transfer => new RecentImport(
+                transfer.Id,
+                GetImportTitle(transfer),
+                transfer.CompletedAt ?? transfer.CreatedAt)))
+            .OrderByDescending(import => import.ImportedAt)
+            .Take(5)
+            .ToList();
 
         var cleanupCandidates = await dbContext.CleanupCandidates
             .Where(candidate => candidate.Status == CleanupStatus.PendingReview)
@@ -76,6 +91,18 @@ public sealed class DashboardController(
                 download.SizeBytes,
                 download.RemotePath,
                 download.UpdatedAt)).ToList());
+    }
+
+    private static string GetImportTitle(RemoteTransfer transfer)
+    {
+        var localName = Path.GetFileName(transfer.LocalPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (!string.IsNullOrWhiteSpace(localName))
+        {
+            return localName;
+        }
+
+        var remoteName = Path.GetFileName(transfer.RemotePath.TrimEnd('/'));
+        return string.IsNullOrWhiteSpace(remoteName) ? transfer.RemotePath : remoteName;
     }
 
     private async Task RefreshDashboardSourcesAsync(CancellationToken cancellationToken)

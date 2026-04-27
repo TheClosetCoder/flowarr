@@ -1,6 +1,7 @@
 using Flowarr.Core.Entities;
 using Flowarr.Core.Integrations;
 using Flowarr.Infrastructure.Data;
+using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,15 +17,18 @@ public sealed class DownloadsController(
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {
+        await LegacyMockDataCleaner.RemoveAsync(dbContext, cancellationToken);
+
         try
         {
             await RefreshDownloadsAsync(cancellationToken);
-            await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Download refresh failed; returning last known download data.");
         }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         var downloads = await dbContext.Downloads
             .OrderByDescending(download => download.UpdatedAt)

@@ -1,5 +1,6 @@
 using Flowarr.Core.Services;
 using Flowarr.Infrastructure.Data;
+using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,6 +15,9 @@ public sealed class CleanupController(
     [HttpGet("candidates")]
     public async Task<IActionResult> GetCandidates(CancellationToken cancellationToken)
     {
+        await LegacyMockDataCleaner.RemoveAsync(dbContext, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
         var candidates = await dbContext.CleanupCandidates
             .OrderByDescending(candidate => candidate.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -24,6 +28,9 @@ public sealed class CleanupController(
     [HttpPost("generate")]
     public async Task<IActionResult> Generate(CancellationToken cancellationToken)
     {
+        await LegacyMockDataCleaner.RemoveAsync(dbContext, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
         var candidates = await cleanupRecommendationService.GenerateCandidatesAsync(cancellationToken);
         return Ok(candidates);
     }

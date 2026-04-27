@@ -32,6 +32,7 @@ public sealed class FlowarrSyncHostedService(
             await dbContext.Database.EnsureCreatedAsync(cancellationToken);
             await EnsureCompatibilityTablesAsync(dbContext, cancellationToken);
 
+            await LegacyMockDataCleaner.RemoveAsync(dbContext, cancellationToken);
             await SyncDownloadsAsync(scope.ServiceProvider, dbContext, cancellationToken);
             await SyncMediaAsync(scope.ServiceProvider, dbContext, cancellationToken);
             await SyncStorageAsync(scope.ServiceProvider, dbContext, cancellationToken);
