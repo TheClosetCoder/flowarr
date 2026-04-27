@@ -103,7 +103,7 @@ public sealed class ConnectionSettingsService(
             {
                 ["clientType"] = string.IsNullOrWhiteSpace(request.ClientType) ? "qBittorrent" : request.ClientType,
                 ["baseUrl"] = request.BaseUrl,
-                ["username"] = request.Username
+                ["username"] = request.Username ?? string.Empty
             },
             secrets,
             cancellationToken);
@@ -278,7 +278,7 @@ public sealed record SaveQBittorrentConnectionRequest(
     bool Enabled,
     string ClientType,
     string BaseUrl,
-    string Username,
+    string? Username,
     string? Password,
     bool ClearPassword);
 
