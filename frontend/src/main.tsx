@@ -54,14 +54,20 @@ function App() {
   const [transfers, setTransfers] = React.useState<RemoteTransfer[]>([]);
   const [transferSettings, setTransferSettings] = React.useState<TransferSettings | null>(null);
   const [connectionSettings, setConnectionSettings] = React.useState<ConnectionSettings | null>(null);
+  const [settingsError, setSettingsError] = React.useState("");
 
   const refreshSettings = React.useCallback(async () => {
-    const [transfersSettings, connectionsSettings] = await Promise.all([
-      fetchJson<TransferSettings>("/api/transfers/settings"),
-      fetchJson<RawConnectionSettings>("/api/connections/settings")
-    ]);
-    setTransferSettings(transfersSettings);
-    setConnectionSettings(normalizeConnectionSettings(connectionsSettings));
+    setSettingsError("");
+    const connectionsPromise = fetchJson<RawConnectionSettings>("/api/connections/settings")
+      .then((connectionsSettings) => setConnectionSettings(normalizeConnectionSettings(connectionsSettings)));
+    const transfersPromise = fetchJson<TransferSettings>("/api/transfers/settings")
+      .then(setTransferSettings);
+
+    const results = await Promise.allSettled([connectionsPromise, transfersPromise]);
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") {
+      setSettingsError(failed.reason instanceof Error ? failed.reason.message : "Unable to load some settings.");
+    }
   }, []);
 
   React.useEffect(() => {
@@ -135,7 +141,7 @@ function App() {
           </div>
 
           {activePage === "Dashboard" && <Dashboard dashboard={dashboard} />}
-          {activePage === "Connections" && <Connections settings={connectionSettings} onSaved={refreshSettings} />}
+          {activePage === "Connections" && <Connections settings={connectionSettings} error={settingsError} onSaved={refreshSettings} />}
           {activePage === "Storage" && <Storage storage={storage} setStorage={setStorage} />}
           {activePage === "Downloads" && <Downloads downloads={downloads} />}
           {activePage === "Transfers" && <Transfers transfers={transfers} settings={transferSettings} />}
@@ -168,15 +174,13 @@ function normalizeAutoDownload(autoDownload: Partial<ConnectionSettings["autoDow
     localImportPath: autoDownload?.localImportPath ?? "/media/import",
     overwriteExisting: autoDownload?.overwriteExisting ?? false,
     allowedExtensions: autoDownload?.allowedExtensions ?? [".mkv", ".mp4", ".avi", ".mov", ".m4v", ".srt"],
-    localMediaPaths: (autoDownload?.localMediaPaths ?? [
-      { enabled: true, name: "Movies", path: "/media/Movies", role: "Movies" },
-      { enabled: true, name: "TV Shows", path: "/media/TV Shows", role: "TV" }
-    ]).map((path) => ({ ...path, id: path.id ?? crypto.randomUUID() })),
-    transferRules: (autoDownload?.transferRules ?? [
-      { enabled: true, name: "Movies", remotePathPrefix: "/downloads/movies", localPath: "/media/Movies" },
-      { enabled: true, name: "TV Shows", remotePathPrefix: "/downloads/tv", localPath: "/media/TV Shows" }
-    ]).map((rule) => ({ ...rule, id: rule.id ?? crypto.randomUUID() }))
+    localMediaPaths: (autoDownload?.localMediaPaths ?? []).map((path) => ({ ...path, id: path.id ?? createClientId() })),
+    transferRules: (autoDownload?.transferRules ?? []).map((rule) => ({ ...rule, id: rule.id ?? createClientId() }))
   };
+}
+
+function createClientId() {
+  return globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function defaultConnectionSettings(): ConnectionSettings {
@@ -242,20 +246,25 @@ function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
   );
 }
 
-function Connections({ settings, onSaved }: { settings: ConnectionSettings | null; onSaved: () => Promise<void> }) {
+function Connections({ settings, error, onSaved }: { settings: ConnectionSettings | null; error: string; onSaved: () => Promise<void> }) {
   if (!settings) {
-    return <p className="text-sm text-slate-600">Loading connection settings...</p>;
+    return (
+      <div className="rounded border border-line bg-white p-4">
+        <p className="text-sm text-slate-600">Loading connection settings...</p>
+        {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+      </div>
+    );
   }
 
   return (
     <section className="space-y-4">
       <ConnectionForms settings={settings} onSaved={onSaved} />
-      <PlaceholderConnections />
+      <PlannedConnections />
     </section>
   );
 }
 
-function PlaceholderConnections() {
+function PlannedConnections() {
   const integrations = ["Radarr", "Sonarr", "Plex", "Jellyfin"];
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -265,7 +274,7 @@ function PlaceholderConnections() {
             <Plug className="text-accent" size={20} />
             <h3 className="font-medium">{name}</h3>
           </div>
-          <p className="mt-3 text-sm text-slate-600">Uses mock data until credentials are configured through environment variables.</p>
+          <p className="mt-3 text-sm text-slate-600">Not configured yet.</p>
         </div>
       ))}
     </section>
@@ -421,7 +430,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             <button
               onClick={() => setAutoDownload({
                 ...autoDownload,
-                localMediaPaths: [...autoDownload.localMediaPaths, { id: crypto.randomUUID(), enabled: true, name: "New path", path: "/media", role: "Mixed" }]
+                localMediaPaths: [...autoDownload.localMediaPaths, { id: createClientId(), enabled: true, name: "New path", path: "/media", role: "Mixed" }]
               })}
               className="rounded border border-line px-3 py-1 text-sm"
             >
@@ -456,7 +465,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             <button
               onClick={() => setAutoDownload({
                 ...autoDownload,
-                transferRules: [...autoDownload.transferRules, { id: crypto.randomUUID(), enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localMediaPaths[0]?.path || autoDownload.localImportPath || "/media/import" }]
+                transferRules: [...autoDownload.transferRules, { id: createClientId(), enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localMediaPaths[0]?.path || autoDownload.localImportPath || "/media/import" }]
               })}
               className="rounded border border-line px-3 py-1 text-sm"
             >

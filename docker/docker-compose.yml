@@ -44,7 +44,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ${FLOWARR_MEDIA_ROOT:-./data/media}:/media
+      - ${FLOWARR_MEDIA_ROOT:-./mnt/media}:/media
       - ${FLOWARR_SEEDBOX_MOUNT_PATH:-./data/seedbox}:/seedbox:ro
       - ${FLOWARR_SFTP_PRIVATE_KEY_HOST_PATH:-./data/keys}:/keys:ro
       - flowarr-keys:/var/lib/flowarr/keys

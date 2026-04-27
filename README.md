@@ -12,7 +12,7 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 - Includes a React, TypeScript, and Tailwind dashboard.
 - Tracks media items, downloads, media files, storage locations, cleanup candidates, and audit logs.
 - Runs scheduled sync jobs through a .NET hosted service.
-- Starts with mock qBittorrent and Radarr integrations when credentials are not configured.
+- Shows no torrent or media integration data until real integrations are configured.
 - Can auto-download completed seedbox files over SFTP into configured local media paths.
 - Lets you configure Deluge or qBittorrent, SFTP seedbox, and auto-download settings from the app.
 - Generates cleanup recommendations without deleting automatically.
@@ -22,7 +22,7 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 - It does not replace Radarr, Sonarr, Plex, Jellyfin, or qBittorrent.
 - It does not automatically delete files in the MVP.
 - It does not make uncertain matches silently safe.
-- It does not yet implement real qBittorrent, Radarr, Sonarr, Plex, or Jellyfin API clients.
+- It does not yet implement Radarr, Sonarr, Plex, or Jellyfin API clients.
 - It does not yet implement a production authentication model.
 
 ## Run With Docker Compose
@@ -156,7 +156,7 @@ docker/
 
 ## Current MVP Limitations
 
-- Integrations are mocked until real credentials and adapters are implemented.
+- Unconfigured integrations return no data.
 - Database schema is created with `EnsureCreated` for MVP bootstrapping, not migrations.
 - Cleanup approval logs delete intent, but no production file-deletion adapter is enabled.
 - The frontend is a first-pass dashboard and does not yet include full connection testing or auth.

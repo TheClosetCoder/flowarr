@@ -24,10 +24,10 @@ public sealed class ConnectionsController(IConnectionSettingsService connectionS
                 value.SftpSeedbox.Host,
                 value.SftpSeedbox.Port
             },
-            radarr = new { configured = false, status = "placeholder" },
-            sonarr = new { configured = false, status = "placeholder" },
-            plex = new { configured = false, status = "placeholder" },
-            jellyfin = new { configured = false, status = "placeholder" }
+            radarr = new { configured = false, status = "not_configured" },
+            sonarr = new { configured = false, status = "not_configured" },
+            plex = new { configured = false, status = "not_configured" },
+            jellyfin = new { configured = false, status = "not_configured" }
         });
     }
 

@@ -22,9 +22,8 @@ public static class DependencyInjection
         services.AddDbContext<FlowarrDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<IConnectionSettingsService, ConnectionSettingsService>();
         services.AddScoped<ICleanupRecommendationService, CleanupRecommendationService>();
-        services.AddScoped<MockDownloadClient>();
         services.AddScoped<IDownloadClient, QBittorrentDownloadClient>();
-        services.AddScoped<IMediaCatalogClient, MockRadarrClient>();
+        services.AddScoped<IMediaCatalogClient, EmptyMediaCatalogClient>();
         services.AddScoped<IRemoteFileTransferClient, SftpSeedboxTransferClient>();
         services.AddScoped<LocalStorageScanner>();
         services.AddScoped<SeedboxStorageScanner>();

@@ -12,7 +12,6 @@ namespace Flowarr.Infrastructure.Integrations;
 
 public sealed class QBittorrentDownloadClient(
     IConnectionSettingsService connectionSettingsService,
-    MockDownloadClient mockDownloadClient,
     ILogger<QBittorrentDownloadClient> logger) : IDownloadClient
 {
     public async Task<IReadOnlyCollection<DownloadSnapshot>> GetDownloadsAsync(CancellationToken cancellationToken = default)
@@ -20,7 +19,7 @@ public sealed class QBittorrentDownloadClient(
         var settings = await connectionSettingsService.GetQBittorrentAsync(cancellationToken);
         if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.BaseUrl))
         {
-            return await mockDownloadClient.GetDownloadsAsync(cancellationToken);
+            return [];
         }
 
         if (settings.ClientType.Equals("Deluge", StringComparison.OrdinalIgnoreCase))
