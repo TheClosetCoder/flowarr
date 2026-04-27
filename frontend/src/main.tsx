@@ -168,7 +168,7 @@ async function putJson(path: string, body: unknown) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  if (!response.ok) throw new Error(`Request failed: ${path}`);
+  if (!response.ok) throw new Error(await getErrorMessage(response, path));
 }
 
 function normalizeAutoDownload(autoDownload: Partial<ConnectionSettings["autoDownload"]> | undefined): ConnectionSettings["autoDownload"] {
@@ -224,8 +224,24 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
-  if (!response.ok) throw new Error(`Request failed: ${path}`);
+  if (!response.ok) throw new Error(await getErrorMessage(response, path));
   return response.json();
+}
+
+async function getErrorMessage(response: Response, path: string) {
+  const body = await response.text();
+  if (!body) return `Request failed: ${path} (${response.status})`;
+
+  try {
+    const parsed = JSON.parse(body) as { message?: string; title?: string; errors?: Record<string, string[]> };
+    if (parsed.message) return parsed.message;
+    if (parsed.errors) return Object.entries(parsed.errors).map(([field, values]) => `${field}: ${values.join(", ")}`).join(" ");
+    if (parsed.title) return parsed.title;
+  } catch {
+    return body;
+  }
+
+  return `Request failed: ${path} (${response.status})`;
 }
 
 function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
@@ -293,11 +309,17 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
   const [sftpSeedbox, setSftpSeedbox] = React.useState({ ...settings.sftpSeedbox, password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
   const [autoDownload, setAutoDownload] = React.useState({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
   const [message, setMessage] = React.useState("");
+  const [torrentTest, setTorrentTest] = React.useState<ConnectionTestResult | null>(null);
+  const [sftpTest, setSftpTest] = React.useState<ConnectionTestResult | null>(null);
+  const [testingTorrent, setTestingTorrent] = React.useState(false);
+  const [testingSftp, setTestingSftp] = React.useState(false);
 
   React.useEffect(() => {
     setQbittorrent({ ...settings.qbittorrent, password: "", clearPassword: false });
     setSftpSeedbox({ ...settings.sftpSeedbox, password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
     setAutoDownload({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
+    setTorrentTest(null);
+    setSftpTest(null);
   }, [settings]);
 
   async function saveTorrentClient() {
@@ -314,6 +336,8 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
 
   async function testTorrentClient() {
     setMessage("Testing torrent client...");
+    setTestingTorrent(true);
+    setTorrentTest({ ok: true, message: "Testing torrent client..." });
     try {
       const result = await postJson<ConnectionTestResult>("/api/connections/qbittorrent/test", {
         ...qbittorrent,
@@ -321,9 +345,14 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
         baseUrl: qbittorrent.baseUrl || "",
         username: qbittorrent.clientType === "Deluge" ? "" : qbittorrent.username || ""
       });
+      setTorrentTest(result);
       setMessage(`${result.ok ? "Torrent test passed" : "Torrent test failed"}: ${result.message}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Torrent test failed.");
+      const errorMessage = error instanceof Error ? error.message : "Torrent test failed.";
+      setTorrentTest({ ok: false, message: errorMessage });
+      setMessage(errorMessage);
+    } finally {
+      setTestingTorrent(false);
     }
   }
 
@@ -343,6 +372,8 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
 
   async function testSeedbox() {
     setMessage("Testing SFTP seedbox...");
+    setTestingSftp(true);
+    setSftpTest({ ok: true, message: "Testing SFTP seedbox..." });
     try {
       const result = await postJson<ConnectionTestResult>("/api/connections/sftp-seedbox/test", {
         ...sftpSeedbox,
@@ -352,9 +383,14 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
         privateKeyPath: sftpSeedbox.privateKeyPath || "",
         remoteRootPath: sftpSeedbox.remoteRootPath || ""
       });
+      setSftpTest(result);
       setMessage(`${result.ok ? "SFTP test passed" : "SFTP test failed"}: ${result.message}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "SFTP test failed.");
+      const errorMessage = error instanceof Error ? error.message : "SFTP test failed.";
+      setSftpTest({ ok: false, message: errorMessage });
+      setMessage(errorMessage);
+    } finally {
+      setTestingSftp(false);
     }
   }
 
@@ -413,9 +449,12 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
               </label>
             )}
             <div className="flex flex-wrap gap-2">
-              <button onClick={saveTorrentClient} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save torrent client</button>
-              <button onClick={testTorrentClient} className="rounded border border-line px-4 py-2 text-sm font-medium">Test connection</button>
+              <button type="button" onClick={saveTorrentClient} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save torrent client</button>
+              <button type="button" onClick={testTorrentClient} disabled={testingTorrent} className="rounded border border-line px-4 py-2 text-sm font-medium disabled:cursor-wait disabled:opacity-60">
+                {testingTorrent ? "Testing..." : "Test connection"}
+              </button>
             </div>
+            {torrentTest && <ConnectionTestStatus result={torrentTest} pending={testingTorrent} />}
           </div>
         </div>
 
@@ -448,9 +487,12 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              <button onClick={saveSeedbox} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save seedbox</button>
-              <button onClick={testSeedbox} className="rounded border border-line px-4 py-2 text-sm font-medium">Test connection</button>
+              <button type="button" onClick={saveSeedbox} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save seedbox</button>
+              <button type="button" onClick={testSeedbox} disabled={testingSftp} className="rounded border border-line px-4 py-2 text-sm font-medium disabled:cursor-wait disabled:opacity-60">
+                {testingSftp ? "Testing..." : "Test connection"}
+              </button>
             </div>
+            {sftpTest && <ConnectionTestStatus result={sftpTest} pending={testingSftp} />}
           </div>
         </div>
       </div>
@@ -563,6 +605,20 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
         pathIndex === index ? { ...path, ...patch } : path)
     });
   }
+}
+
+function ConnectionTestStatus({ result, pending }: { result: ConnectionTestResult; pending: boolean }) {
+  const styles = pending
+    ? "border-blue-200 bg-blue-50 text-blue-800"
+    : result.ok
+      ? "border-emerald-200 bg-emerald-50 text-accent"
+      : "border-rose-200 bg-rose-50 text-danger";
+
+  return (
+    <div className={`rounded border px-3 py-2 text-sm ${styles}`}>
+      {result.message}
+    </div>
+  );
 }
 
 function Input({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string }) {

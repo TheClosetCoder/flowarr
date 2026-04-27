@@ -103,13 +103,21 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
             }
         }
 
-        var torrents = await httpClient.GetFromJsonAsync<List<QBittorrentTorrent>>("api/v2/torrents/info", cancellationToken) ?? [];
+        var torrentsResponse = await httpClient.GetAsync("api/v2/torrents/info", cancellationToken);
+        if (!torrentsResponse.IsSuccessStatusCode)
+        {
+            return ConnectionTestResult.Failure(await FormatHttpFailureAsync("qBittorrent torrent list request failed", torrentsResponse, cancellationToken));
+        }
+
+        var torrents = await torrentsResponse.Content.ReadFromJsonAsync<List<QBittorrentTorrent>>(cancellationToken) ?? [];
         return ConnectionTestResult.Success($"Connected to qBittorrent. Found {torrents.Count} torrent(s).");
     }
 
     private static async Task<ConnectionTestResult> TestDelugeAsync(QBittorrentConnectionSettings settings, CancellationToken cancellationToken)
     {
-        using var httpClient = new HttpClient
+        var cookies = new CookieContainer();
+        using var handler = new HttpClientHandler { CookieContainer = cookies };
+        using var httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/"),
             Timeout = TimeSpan.FromSeconds(15)
@@ -139,7 +147,10 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
             "json",
             new DelugeRequest(method, parameters, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
             cancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(await FormatHttpFailureAsync($"Deluge {method} failed", response, cancellationToken));
+        }
 
         var payload = await response.Content.ReadFromJsonAsync<DelugeResponse<T>>(cancellationToken);
         if (payload is null)
@@ -153,6 +164,17 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
         }
 
         return payload.Result;
+    }
+
+    private static async Task<string> FormatHttpFailureAsync(string prefix, HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return $"{prefix}: HTTP {(int)response.StatusCode} {response.ReasonPhrase}.";
+        }
+
+        return $"{prefix}: HTTP {(int)response.StatusCode} {response.ReasonPhrase}. {body}";
     }
 
     private async Task<QBittorrentConnectionSettings> MergeTorrentSettingsAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken)
