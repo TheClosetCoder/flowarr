@@ -1,0 +1,9 @@
+@Flowarr.Api_HostAddress = http://localhost:8080
+
+GET {{Flowarr.Api_HostAddress}}/health
+Accept: application/json
+
+###
+
+GET {{Flowarr.Api_HostAddress}}/api/dashboard
+Accept: application/json

@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: flowarr
+      POSTGRES_USER: flowarr
+      POSTGRES_PASSWORD: flowarr
+    volumes:
+      - flowarr-postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowarr -d flowarr"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Flowarr.Api/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Flowarr: Host=postgres;Port=5432;Database=flowarr;Username=flowarr;Password=flowarr
+      Flowarr__QBittorrent__BaseUrl: ${FLOWARR_QBITTORRENT_BASE_URL:-}
+      Flowarr__QBittorrent__Username: ${FLOWARR_QBITTORRENT_USERNAME:-}
+      Flowarr__QBittorrent__Password: ${FLOWARR_QBITTORRENT_PASSWORD:-}
+      Flowarr__Radarr__BaseUrl: ${FLOWARR_RADARR_BASE_URL:-}
+      Flowarr__Radarr__ApiKey: ${FLOWARR_RADARR_API_KEY:-}
+      Flowarr__Storage__LocalPath: /media
+      Flowarr__Storage__SeedboxPathOrEndpoint: ${FLOWARR_SEEDBOX_PATH_OR_ENDPOINT:-/seedbox}
+      Flowarr__Cleanup__DryRun: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ${FLOWARR_LOCAL_MEDIA_PATH:-./data/media}:/media:ro
+      - ${FLOWARR_SEEDBOX_MOUNT_PATH:-./data/seedbox}:/seedbox:ro
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  flowarr-postgres:
