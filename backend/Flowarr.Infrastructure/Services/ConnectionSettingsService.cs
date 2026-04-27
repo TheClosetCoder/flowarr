@@ -44,6 +44,7 @@ public sealed class ConnectionSettingsService(
 
         return new QBittorrentConnectionSettings(
             configured,
+            Get(settings, "clientType", "qBittorrent"),
             Get(settings, "baseUrl", options.Value.QBittorrent.BaseUrl),
             Get(settings, "username", options.Value.QBittorrent.Username),
             Get(secrets, "password", options.Value.QBittorrent.Password),
@@ -96,10 +97,11 @@ public sealed class ConnectionSettingsService(
 
         await SaveConnectionAsync(
             "qbittorrent",
-            "qBittorrent",
+            "Torrent Client",
             request.Enabled,
             new Dictionary<string, string?>
             {
+                ["clientType"] = string.IsNullOrWhiteSpace(request.ClientType) ? "qBittorrent" : request.ClientType,
                 ["baseUrl"] = request.BaseUrl,
                 ["username"] = request.Username
             },
@@ -248,6 +250,7 @@ public sealed record ConnectionSettingsSnapshot(
 
 public sealed record QBittorrentConnectionSettings(
     bool Enabled,
+    string ClientType,
     string BaseUrl,
     string Username,
     string Password,
@@ -273,6 +276,7 @@ public sealed record AutoDownloadConnectionSettings(
 
 public sealed record SaveQBittorrentConnectionRequest(
     bool Enabled,
+    string ClientType,
     string BaseUrl,
     string Username,
     string? Password,

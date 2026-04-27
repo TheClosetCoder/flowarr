@@ -19,7 +19,7 @@ type StorageLocation = { id: string; name: string; kind: string | number; pathOr
 type RemoteTransfer = { id: string; provider: string; remotePath: string; localPath: string; bytesTransferred: number; status: string; message?: string; createdAt: string; completedAt?: string };
 type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
 type ConnectionSettings = {
-  qbittorrent: { enabled: boolean; baseUrl: string; username: string; hasPassword: boolean };
+  qbittorrent: { enabled: boolean; clientType: string; baseUrl: string; username: string; hasPassword: boolean };
   sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; remoteRootPath: string; hasPassword: boolean; hasPrivateKeyPassphrase: boolean };
   autoDownload: { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[] };
 };
@@ -156,7 +156,7 @@ function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Metric title="Local used" value={formatBytes(dashboard?.localStorage.usedBytes ?? 0)} sub={`${formatBytes(dashboard?.localStorage.freeBytes ?? 0)} free`} />
         <Metric title="Seedbox used" value={formatBytes(dashboard?.seedboxStorage.usedBytes ?? 0)} sub={`${formatBytes(dashboard?.seedboxStorage.freeBytes ?? 0)} free`} />
-        <Metric title="Active downloads" value={String(dashboard?.activeDownloads ?? 0)} sub="qBittorrent mock until configured" />
+        <Metric title="Active downloads" value={String(dashboard?.activeDownloads ?? 0)} sub="Torrent client sync status" />
         <Metric title="Cleanup candidates" value={String(dashboard?.cleanupCandidates.length ?? 0)} sub="Manual review required" />
       </div>
       <TwoColumn
@@ -211,30 +211,55 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
     setAutoDownload({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
   }, [settings]);
 
-  async function saveAll() {
-    setMessage("Saving...");
+  async function saveTorrentClient() {
+    setMessage("Saving torrent client...");
     await putJson("/api/connections/qbittorrent", qbittorrent);
+    await onSaved();
+    setMessage("Torrent client saved securely.");
+  }
+
+  async function saveSeedbox() {
+    setMessage("Saving seedbox...");
     await putJson("/api/connections/sftp-seedbox", sftpSeedbox);
+    await onSaved();
+    setMessage("Seedbox saved securely.");
+  }
+
+  async function saveAutoDownload() {
+    setMessage("Saving auto-download...");
     await putJson("/api/connections/auto-download", {
       ...autoDownload,
       allowedExtensions: autoDownload.allowedExtensionsText.split(",").map((item) => item.trim()).filter(Boolean)
     });
     await onSaved();
-    setMessage("Saved securely.");
+    setMessage("Auto-download saved.");
   }
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="rounded border border-line bg-white p-4">
-          <h3 className="font-medium">qBittorrent</h3>
+          <h3 className="font-medium">Torrent client</h3>
           <div className="mt-4 grid gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={qbittorrent.enabled} onChange={(event) => setQbittorrent({ ...qbittorrent, enabled: event.target.checked })} />
               Enabled
             </label>
-            <Input label="Base URL" value={qbittorrent.baseUrl} onChange={(value) => setQbittorrent({ ...qbittorrent, baseUrl: value })} placeholder="https://your-qbit-host" />
-            <Input label="Username" value={qbittorrent.username} onChange={(value) => setQbittorrent({ ...qbittorrent, username: value })} />
+            <label className="grid gap-1 text-sm">
+              <span className="text-slate-600">Client</span>
+              <select
+                value={qbittorrent.clientType || "qBittorrent"}
+                onChange={(event) => setQbittorrent({ ...qbittorrent, clientType: event.target.value })}
+                className="rounded border border-line px-3 py-2 text-ink outline-none focus:border-accent"
+              >
+                <option value="Deluge">Deluge</option>
+                <option value="qBittorrent">qBittorrent</option>
+              </select>
+            </label>
+            <Input label="Base URL" value={qbittorrent.baseUrl} onChange={(value) => setQbittorrent({ ...qbittorrent, baseUrl: value })} placeholder={qbittorrent.clientType === "Deluge" ? "https://your-deluge-web-host" : "https://your-qbit-host"} />
+            {qbittorrent.clientType !== "Deluge" && (
+              <Input label="Username" value={qbittorrent.username} onChange={(value) => setQbittorrent({ ...qbittorrent, username: value })} />
+            )}
             <Input label={qbittorrent.hasPassword ? "Password (already saved)" : "Password"} type="password" value={qbittorrent.password} onChange={(value) => setQbittorrent({ ...qbittorrent, password: value })} placeholder={qbittorrent.hasPassword ? "Leave blank to keep current" : ""} />
             {qbittorrent.hasPassword && (
               <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -242,6 +267,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
                 Clear saved password
               </label>
             )}
+            <button onClick={saveTorrentClient} className="w-fit rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save torrent client</button>
           </div>
         </div>
 
@@ -273,6 +299,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
                 </label>
               )}
             </div>
+            <button onClick={saveSeedbox} className="w-fit rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save seedbox</button>
           </div>
         </div>
       </div>
@@ -291,10 +318,10 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
           <Input label="Local import path" value={autoDownload.localImportPath} onChange={(value) => setAutoDownload({ ...autoDownload, localImportPath: value })} placeholder="/plex/import" />
           <Input label="Allowed extensions" value={autoDownload.allowedExtensionsText} onChange={(value) => setAutoDownload({ ...autoDownload, allowedExtensionsText: value })} placeholder=".mkv, .mp4, .srt" />
         </div>
+        <button onClick={saveAutoDownload} className="mt-4 rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save auto-download</button>
       </div>
 
       <div className="flex items-center gap-3">
-        <button onClick={saveAll} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save connection settings</button>
         <p className="text-sm text-slate-600">{message}</p>
       </div>
     </div>
@@ -384,7 +411,7 @@ function SettingsPanel({ transferSettings }: { transferSettings: TransferSetting
     <section className="space-y-4">
       <div className="rounded border border-line bg-white p-5">
         <h3 className="font-medium">Runtime configuration</h3>
-        <p className="mt-2 text-sm text-slate-600">Configure PostgreSQL, qBittorrent, Radarr, SFTP seedbox access, storage paths, and dry-run behavior with environment variables in Docker Compose.</p>
+        <p className="mt-2 text-sm text-slate-600">Configure PostgreSQL, torrent client, SFTP seedbox access, storage paths, and dry-run behavior with environment variables in Docker Compose.</p>
       </div>
       <div className="rounded border border-line bg-white p-5">
         <h3 className="font-medium">Auto download</h3>

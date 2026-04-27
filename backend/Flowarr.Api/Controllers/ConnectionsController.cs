@@ -37,6 +37,7 @@ public sealed class ConnectionsController(IConnectionSettingsService connectionS
         return new ConnectionSettingsResponse(
             new QBittorrentConnectionResponse(
                 settings.QBittorrent.Enabled,
+                settings.QBittorrent.ClientType,
                 settings.QBittorrent.BaseUrl,
                 settings.QBittorrent.Username,
                 settings.QBittorrent.HasPassword),
@@ -83,6 +84,7 @@ public sealed record ConnectionSettingsResponse(
 
 public sealed record QBittorrentConnectionResponse(
     bool Enabled,
+    string ClientType,
     string BaseUrl,
     string Username,
     bool HasPassword);

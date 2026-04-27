@@ -14,7 +14,7 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 - Runs scheduled sync jobs through a .NET hosted service.
 - Starts with mock qBittorrent and Radarr integrations when credentials are not configured.
 - Can auto-download completed seedbox files over SFTP into a local Plex import folder.
-- Lets you configure qBittorrent, SFTP seedbox, and auto-download settings from the app.
+- Lets you configure Deluge or qBittorrent, SFTP seedbox, and auto-download settings from the app.
 - Generates cleanup recommendations without deleting automatically.
 
 ## What Flowarr Does Not Do
@@ -79,7 +79,7 @@ Flowarr__AutoDownload__LocalImportPath=/plex/import
 
 Flowarr can pull completed or seeding downloads from a remote seedbox over SFTP into a local Plex import folder.
 
-You can configure qBittorrent, SFTP seedbox, and auto-download settings from the Connections page in the app. Passwords and key passphrases are encrypted before being stored in PostgreSQL using ASP.NET Core Data Protection. The Docker Compose file persists the encryption key ring in the `flowarr-keys` volume so saved credentials remain readable after container rebuilds.
+You can configure Deluge or qBittorrent, SFTP seedbox, and auto-download settings from the Connections page in the app. Deluge Web only needs its web password; qBittorrent can use username and password. Passwords and key passphrases are encrypted before being stored in PostgreSQL using ASP.NET Core Data Protection. The Docker Compose file persists the encryption key ring in the `flowarr-keys` volume so saved credentials remain readable after container rebuilds.
 
 You can also seed defaults with `.env`:
 
