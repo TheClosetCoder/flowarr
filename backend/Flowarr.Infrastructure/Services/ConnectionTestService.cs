@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Threading;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Renci.SshNet;
@@ -14,6 +15,8 @@ public interface IConnectionTestService
 
 public sealed class ConnectionTestService(IConnectionSettingsService connectionSettingsService) : IConnectionTestService
 {
+    private static long _delugeRequestId;
+
     public async Task<ConnectionTestResult> TestTorrentClientAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken = default)
     {
         var settings = await MergeTorrentSettingsAsync(request, cancellationToken);
@@ -116,10 +119,14 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
     private static async Task<ConnectionTestResult> TestDelugeAsync(QBittorrentConnectionSettings settings, CancellationToken cancellationToken)
     {
         var cookies = new CookieContainer();
-        using var handler = new HttpClientHandler { CookieContainer = cookies };
+        using var handler = new HttpClientHandler
+        {
+            CookieContainer = cookies,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli
+        };
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/"),
+            BaseAddress = GetDelugeBaseUri(settings.BaseUrl),
             Timeout = TimeSpan.FromSeconds(15)
         };
 
@@ -145,7 +152,7 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
     {
         var response = await httpClient.PostAsJsonAsync(
             "json",
-            new DelugeRequest(method, parameters, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
+            new DelugeRequest(method, parameters, Interlocked.Increment(ref _delugeRequestId)),
             cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -175,6 +182,14 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
         }
 
         return $"{prefix}: HTTP {(int)response.StatusCode} {response.ReasonPhrase}. {body}";
+    }
+
+    private static Uri GetDelugeBaseUri(string baseUrl)
+    {
+        var trimmed = baseUrl.TrimEnd('/');
+        return trimmed.EndsWith("/json", StringComparison.OrdinalIgnoreCase)
+            ? new Uri(trimmed[..^"/json".Length].TrimEnd('/') + "/")
+            : new Uri(trimmed + "/");
     }
 
     private async Task<QBittorrentConnectionSettings> MergeTorrentSettingsAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken)

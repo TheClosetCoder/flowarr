@@ -14,6 +14,8 @@ public sealed class QBittorrentDownloadClient(
     IConnectionSettingsService connectionSettingsService,
     ILogger<QBittorrentDownloadClient> logger) : IDownloadClient
 {
+    private static long _delugeRequestId;
+
     public async Task<IReadOnlyCollection<DownloadSnapshot>> GetDownloadsAsync(CancellationToken cancellationToken = default)
     {
         var settings = await connectionSettingsService.GetQBittorrentAsync(cancellationToken);
@@ -76,10 +78,14 @@ public sealed class QBittorrentDownloadClient(
         CancellationToken cancellationToken)
     {
         var cookies = new CookieContainer();
-        using var handler = new HttpClientHandler { CookieContainer = cookies };
+        using var handler = new HttpClientHandler
+        {
+            CookieContainer = cookies,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli
+        };
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/")
+            BaseAddress = GetDelugeBaseUri(settings.BaseUrl)
         };
 
         var login = await PostDelugeAsync<JsonElement>(
@@ -146,7 +152,7 @@ public sealed class QBittorrentDownloadClient(
     {
         var response = await httpClient.PostAsJsonAsync(
             "json",
-            new DelugeRequest(method, parameters, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
+            new DelugeRequest(method, parameters, Interlocked.Increment(ref _delugeRequestId)),
             cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -162,6 +168,14 @@ public sealed class QBittorrentDownloadClient(
         }
 
         return payload.Result;
+    }
+
+    private static Uri GetDelugeBaseUri(string baseUrl)
+    {
+        var trimmed = baseUrl.TrimEnd('/');
+        return trimmed.EndsWith("/json", StringComparison.OrdinalIgnoreCase)
+            ? new Uri(trimmed[..^"/json".Length].TrimEnd('/') + "/")
+            : new Uri(trimmed + "/");
     }
 
     private static DownloadStatus MapState(string? state, double progress)
