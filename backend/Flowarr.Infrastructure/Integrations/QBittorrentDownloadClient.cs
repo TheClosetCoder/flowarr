@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Flowarr.Core.Enums;
@@ -15,6 +16,7 @@ public sealed class QBittorrentDownloadClient(
     ILogger<QBittorrentDownloadClient> logger) : IDownloadClient
 {
     private static long _delugeRequestId;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<IReadOnlyCollection<DownloadSnapshot>> GetDownloadsAsync(CancellationToken cancellationToken = default)
     {
@@ -87,6 +89,9 @@ public sealed class QBittorrentDownloadClient(
         {
             BaseAddress = GetDelugeBaseUri(settings.BaseUrl)
         };
+        httpClient.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate, br");
+        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("curl/8.0");
+        httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 
         var login = await PostDelugeAsync<JsonElement>(
             httpClient,
@@ -150,10 +155,11 @@ public sealed class QBittorrentDownloadClient(
         object[] parameters,
         CancellationToken cancellationToken)
     {
-        var response = await httpClient.PostAsJsonAsync(
-            "json",
+        var request = JsonSerializer.Serialize(
             new DelugeRequest(method, parameters, Interlocked.Increment(ref _delugeRequestId)),
-            cancellationToken);
+            JsonOptions);
+        using var content = new StringContent(request, Encoding.UTF8, "application/json");
+        var response = await httpClient.PostAsync("json", content, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var payload = await response.Content.ReadFromJsonAsync<DelugeResponse<T>>(cancellationToken);

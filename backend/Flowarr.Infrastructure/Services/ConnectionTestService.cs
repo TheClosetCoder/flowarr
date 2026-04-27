@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Threading;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -118,6 +119,11 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
 
     private static async Task<ConnectionTestResult> TestDelugeAsync(QBittorrentConnectionSettings settings, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(settings.Password))
+        {
+            return ConnectionTestResult.Failure("Deluge password is empty. Type the password again and save the torrent client settings.");
+        }
+
         var cookies = new CookieContainer();
         using var handler = new HttpClientHandler
         {
@@ -129,6 +135,9 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
             BaseAddress = GetDelugeBaseUri(settings.BaseUrl),
             Timeout = TimeSpan.FromSeconds(15)
         };
+        httpClient.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate, br");
+        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("curl/8.0");
+        httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 
         var login = await PostDelugeAsync<JsonElement>(httpClient, "auth.login", [settings.Password], cancellationToken);
         if (login.ValueKind != JsonValueKind.True)
@@ -150,10 +159,11 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
 
     private static async Task<T> PostDelugeAsync<T>(HttpClient httpClient, string method, object[] parameters, CancellationToken cancellationToken)
     {
-        var response = await httpClient.PostAsJsonAsync(
-            "json",
+        var request = JsonSerializer.Serialize(
             new DelugeRequest(method, parameters, Interlocked.Increment(ref _delugeRequestId)),
-            cancellationToken);
+            JsonOptions);
+        using var content = new StringContent(request, Encoding.UTF8, "application/json");
+        var response = await httpClient.PostAsync("json", content, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(await FormatHttpFailureAsync($"Deluge {method} failed", response, cancellationToken));
@@ -191,6 +201,8 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
             ? new Uri(trimmed[..^"/json".Length].TrimEnd('/') + "/")
             : new Uri(trimmed + "/");
     }
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private async Task<QBittorrentConnectionSettings> MergeTorrentSettingsAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken)
     {
