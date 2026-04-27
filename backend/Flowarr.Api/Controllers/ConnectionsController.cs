@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -78,8 +79,11 @@ public sealed class ConnectionsController(IConnectionSettingsService connectionS
 }
 
 public sealed record ConnectionSettingsResponse(
+    [property: JsonPropertyName("qbittorrent")]
     QBittorrentConnectionResponse QBittorrent,
+    [property: JsonPropertyName("sftpSeedbox")]
     SftpSeedboxConnectionResponse SftpSeedbox,
+    [property: JsonPropertyName("autoDownload")]
     AutoDownloadConnectionSettings AutoDownload);
 
 public sealed record QBittorrentConnectionResponse(

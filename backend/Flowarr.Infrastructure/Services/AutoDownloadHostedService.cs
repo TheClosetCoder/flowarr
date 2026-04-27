@@ -64,7 +64,14 @@ public sealed class AutoDownloadHostedService(
                     continue;
                 }
 
-                await DownloadAsync(dbContext, transferClient, autoDownload, download, cancellationToken);
+                var transferRule = FindTransferRule(autoDownload, download.RemotePath!);
+                if (transferRule is null)
+                {
+                    logger.LogInformation("No auto-download transfer rule matched {RemotePath}", download.RemotePath);
+                    continue;
+                }
+
+                await DownloadAsync(dbContext, transferClient, autoDownload, transferRule, download, cancellationToken);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -80,6 +87,7 @@ public sealed class AutoDownloadHostedService(
         FlowarrDbContext dbContext,
         IRemoteFileTransferClient transferClient,
         AutoDownloadConnectionSettings autoDownload,
+        TransferRuleSettings transferRule,
         Download download,
         CancellationToken cancellationToken)
     {
@@ -88,7 +96,7 @@ public sealed class AutoDownloadHostedService(
             DownloadId = download.Id,
             Provider = "SFTP",
             RemotePath = download.RemotePath!,
-            LocalPath = autoDownload.LocalImportPath,
+            LocalPath = transferRule.LocalPath,
             Status = TransferStatus.Running,
             StartedAt = DateTimeOffset.UtcNow
         };
@@ -98,7 +106,7 @@ public sealed class AutoDownloadHostedService(
 
         try
         {
-            var result = await transferClient.DownloadAsync(download.RemotePath!, autoDownload.LocalImportPath, cancellationToken);
+            var result = await transferClient.DownloadAsync(download.RemotePath!, transferRule.LocalPath, cancellationToken);
             transfer.BytesTransferred = result.BytesTransferred;
             transfer.LocalPath = result.LocalPath;
             transfer.Status = result.Skipped ? TransferStatus.Skipped : TransferStatus.Completed;
@@ -135,5 +143,19 @@ public sealed class AutoDownloadHostedService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static TransferRuleSettings? FindTransferRule(AutoDownloadConnectionSettings settings, string remotePath)
+    {
+        var rules = settings.TransferRules.Length > 0
+            ? settings.TransferRules
+            : [new TransferRuleSettings(true, "Default", string.Empty, settings.LocalImportPath)];
+
+        return rules
+            .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.LocalPath))
+            .OrderByDescending(rule => rule.RemotePathPrefix?.Length ?? 0)
+            .FirstOrDefault(rule =>
+                string.IsNullOrWhiteSpace(rule.RemotePathPrefix) ||
+                remotePath.StartsWith(rule.RemotePathPrefix.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
     }
 }

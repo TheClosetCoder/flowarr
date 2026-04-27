@@ -45,7 +45,7 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
             Directory.CreateDirectory(localRootPath);
             var attributes = client.GetAttributes(normalizedRemotePath);
             var bytes = attributes.IsDirectory
-                ? DownloadDirectory(client, normalizedRemotePath, localRootPath, cancellationToken)
+                ? DownloadDirectory(client, normalizedRemotePath, localRootPath, false, cancellationToken)
                 : DownloadFile(client, normalizedRemotePath, localRootPath, cancellationToken);
 
             client.Disconnect();
@@ -79,10 +79,12 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
         return $"{root}/{remotePath.TrimStart('/')}";
     }
 
-    private long DownloadDirectory(SftpClient client, string remotePath, string localRootPath, CancellationToken cancellationToken)
+    private long DownloadDirectory(SftpClient client, string remotePath, string localRootPath, bool includeDirectoryName, CancellationToken cancellationToken)
     {
         var total = 0L;
-        var localDirectory = Path.Combine(localRootPath, Path.GetFileName(remotePath.TrimEnd('/')));
+        var localDirectory = includeDirectoryName
+            ? Path.Combine(localRootPath, Path.GetFileName(remotePath.TrimEnd('/')))
+            : localRootPath;
         Directory.CreateDirectory(localDirectory);
 
         foreach (var entry in client.ListDirectory(remotePath))
@@ -94,7 +96,7 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
             }
 
             total += entry.IsDirectory
-                ? DownloadDirectory(client, entry.FullName, localDirectory, cancellationToken)
+                ? DownloadDirectory(client, entry.FullName, localDirectory, true, cancellationToken)
                 : DownloadFile(client, entry.FullName, localDirectory, cancellationToken);
         }
 

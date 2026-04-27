@@ -104,7 +104,8 @@ FLOWARR_SFTP_PASSWORD=
 Auto-download behavior:
 
 - It only processes downloads marked complete or seeding.
-- It downloads into `/plex/import` inside the API container, backed by `FLOWARR_PLEX_IMPORT_PATH` on the Docker host.
+- It can route different remote folders to different local destinations with transfer rules.
+- Example: `/downloads/movies` can go to `/plex/import/movies`, while `/downloads/tv` can go to `/plex/import/tv`.
 - It skips existing files unless `FLOWARR_AUTO_DOWNLOAD_OVERWRITE_EXISTING=true`.
 - It records completed, skipped, and failed transfers in the transfer log and audit log.
 - It does not delete anything from the seedbox.

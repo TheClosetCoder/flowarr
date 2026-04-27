@@ -79,7 +79,8 @@ public sealed class ConnectionSettingsService(
             GetBool(settings, "enabled", options.Value.AutoDownload.Enabled),
             Get(settings, "localImportPath", options.Value.AutoDownload.LocalImportPath),
             GetBool(settings, "overwriteExisting", options.Value.AutoDownload.OverwriteExisting),
-            GetStringArray(settings, "allowedExtensions", options.Value.AutoDownload.AllowedExtensions));
+            GetStringArray(settings, "allowedExtensions", options.Value.AutoDownload.AllowedExtensions),
+            GetTransferRules(settings, options.Value.AutoDownload.LocalImportPath));
     }
 
     public async Task SaveQBittorrentAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken = default)
@@ -102,7 +103,7 @@ public sealed class ConnectionSettingsService(
             new Dictionary<string, string?>
             {
                 ["clientType"] = string.IsNullOrWhiteSpace(request.ClientType) ? "qBittorrent" : request.ClientType,
-                ["baseUrl"] = request.BaseUrl,
+                ["baseUrl"] = request.BaseUrl ?? string.Empty,
                 ["username"] = request.Username ?? string.Empty
             },
             secrets,
@@ -137,11 +138,11 @@ public sealed class ConnectionSettingsService(
             request.Enabled,
             new Dictionary<string, string?>
             {
-                ["host"] = request.Host,
+                ["host"] = request.Host ?? string.Empty,
                 ["port"] = request.Port.ToString(),
-                ["username"] = request.Username,
-                ["privateKeyPath"] = request.PrivateKeyPath,
-                ["remoteRootPath"] = request.RemoteRootPath
+                ["username"] = request.Username ?? string.Empty,
+                ["privateKeyPath"] = request.PrivateKeyPath ?? string.Empty,
+                ["remoteRootPath"] = request.RemoteRootPath ?? string.Empty
             },
             secrets,
             cancellationToken);
@@ -158,7 +159,8 @@ public sealed class ConnectionSettingsService(
                 ["enabled"] = request.Enabled.ToString(),
                 ["localImportPath"] = request.LocalImportPath,
                 ["overwriteExisting"] = request.OverwriteExisting.ToString(),
-                ["allowedExtensions"] = string.Join(',', request.AllowedExtensions ?? [])
+                ["allowedExtensions"] = string.Join(',', request.AllowedExtensions ?? []),
+                ["transferRules"] = JsonSerializer.Serialize(request.TransferRules ?? [], JsonOptions)
             },
             [],
             cancellationToken);
@@ -241,6 +243,18 @@ public sealed class ConnectionSettingsService(
             ? value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             : fallback;
     }
+
+    private static TransferRuleSettings[] GetTransferRules(IReadOnlyDictionary<string, string?> values, string fallbackLocalImportPath)
+    {
+        if (values.TryGetValue("transferRules", out var value) && !string.IsNullOrWhiteSpace(value))
+        {
+            return JsonSerializer.Deserialize<TransferRuleSettings[]>(value, JsonOptions) ?? [];
+        }
+
+        return string.IsNullOrWhiteSpace(fallbackLocalImportPath)
+            ? []
+            : [new TransferRuleSettings(true, "Default", string.Empty, fallbackLocalImportPath)];
+    }
 }
 
 public sealed record ConnectionSettingsSnapshot(
@@ -272,30 +286,38 @@ public sealed record AutoDownloadConnectionSettings(
     bool Enabled,
     string LocalImportPath,
     bool OverwriteExisting,
-    string[] AllowedExtensions);
+    string[] AllowedExtensions,
+    TransferRuleSettings[] TransferRules);
+
+public sealed record TransferRuleSettings(
+    bool Enabled,
+    string Name,
+    string RemotePathPrefix,
+    string LocalPath);
 
 public sealed record SaveQBittorrentConnectionRequest(
     bool Enabled,
-    string ClientType,
-    string BaseUrl,
+    string? ClientType,
+    string? BaseUrl,
     string? Username,
     string? Password,
     bool ClearPassword);
 
 public sealed record SaveSftpSeedboxConnectionRequest(
     bool Enabled,
-    string Host,
+    string? Host,
     int Port,
-    string Username,
+    string? Username,
     string? Password,
     bool ClearPassword,
-    string PrivateKeyPath,
+    string? PrivateKeyPath,
     string? PrivateKeyPassphrase,
     bool ClearPrivateKeyPassphrase,
-    string RemoteRootPath);
+    string? RemoteRootPath);
 
 public sealed record SaveAutoDownloadConnectionRequest(
     bool Enabled,
-    string LocalImportPath,
+    string? LocalImportPath,
     bool OverwriteExisting,
-    string[] AllowedExtensions);
+    string[]? AllowedExtensions,
+    TransferRuleSettings[]? TransferRules);

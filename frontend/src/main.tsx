@@ -17,11 +17,18 @@ type CleanupCandidateSummary = { id: string; path: string; sizeBytes: number; re
 type DownloadItem = { id: string; name: string; client: string; status: string; progress: number; sizeBytes: number; remotePath?: string };
 type StorageLocation = { id: string; name: string; kind: string | number; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
 type RemoteTransfer = { id: string; provider: string; remotePath: string; localPath: string; bytesTransferred: number; status: string; message?: string; createdAt: string; completedAt?: string };
-type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
+type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; transferRules: TransferRule[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
+type TransferRule = { enabled: boolean; name: string; remotePathPrefix: string; localPath: string };
 type ConnectionSettings = {
   qbittorrent: { enabled: boolean; clientType: string; baseUrl: string; username: string; hasPassword: boolean };
   sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; remoteRootPath: string; hasPassword: boolean; hasPrivateKeyPassphrase: boolean };
-  autoDownload: { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[] };
+  autoDownload: { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; transferRules: TransferRule[] };
+};
+
+type RawConnectionSettings = Partial<ConnectionSettings> & {
+  qBittorrent?: ConnectionSettings["qbittorrent"];
+  SftpSeedbox?: ConnectionSettings["sftpSeedbox"];
+  sftpseedbox?: ConnectionSettings["sftpSeedbox"];
 };
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -46,10 +53,10 @@ function App() {
   const refreshSettings = React.useCallback(async () => {
     const [transfersSettings, connectionsSettings] = await Promise.all([
       fetchJson<TransferSettings>("/api/transfers/settings"),
-      fetchJson<ConnectionSettings>("/api/connections/settings")
+      fetchJson<RawConnectionSettings>("/api/connections/settings")
     ]);
     setTransferSettings(transfersSettings);
-    setConnectionSettings(connectionsSettings);
+    setConnectionSettings(normalizeConnectionSettings(connectionsSettings));
   }, []);
 
   React.useEffect(() => {
@@ -150,6 +157,51 @@ async function putJson(path: string, body: unknown) {
   if (!response.ok) throw new Error(`Request failed: ${path}`);
 }
 
+function normalizeAutoDownload(autoDownload: Partial<ConnectionSettings["autoDownload"]> | undefined): ConnectionSettings["autoDownload"] {
+  return {
+    enabled: autoDownload?.enabled ?? false,
+    localImportPath: autoDownload?.localImportPath ?? "/plex/import",
+    overwriteExisting: autoDownload?.overwriteExisting ?? false,
+    allowedExtensions: autoDownload?.allowedExtensions ?? [".mkv", ".mp4", ".avi", ".mov", ".m4v", ".srt"],
+    transferRules: autoDownload?.transferRules ?? [
+      { enabled: true, name: "Movies", remotePathPrefix: "/downloads/movies", localPath: "/plex/import/movies" },
+      { enabled: true, name: "TV Shows", remotePathPrefix: "/downloads/tv", localPath: "/plex/import/tv" }
+    ]
+  };
+}
+
+function defaultConnectionSettings(): ConnectionSettings {
+  return {
+    qbittorrent: {
+      enabled: false,
+      clientType: "Deluge",
+      baseUrl: "",
+      username: "",
+      hasPassword: false
+    },
+    sftpSeedbox: {
+      enabled: false,
+      host: "",
+      port: 22,
+      username: "",
+      privateKeyPath: "",
+      remoteRootPath: "",
+      hasPassword: false,
+      hasPrivateKeyPassphrase: false
+    },
+    autoDownload: normalizeAutoDownload(undefined)
+  };
+}
+
+function normalizeConnectionSettings(settings: RawConnectionSettings): ConnectionSettings {
+  const defaults = defaultConnectionSettings();
+  return {
+    qbittorrent: settings.qbittorrent ?? settings.qBittorrent ?? defaults.qbittorrent,
+    sftpSeedbox: settings.sftpSeedbox ?? settings.SftpSeedbox ?? settings.sftpseedbox ?? defaults.sftpSeedbox,
+    autoDownload: normalizeAutoDownload(settings.autoDownload)
+  };
+}
+
 function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
   return (
     <section className="space-y-5">
@@ -213,14 +265,26 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
 
   async function saveTorrentClient() {
     setMessage("Saving torrent client...");
-    await putJson("/api/connections/qbittorrent", qbittorrent);
+    await putJson("/api/connections/qbittorrent", {
+      ...qbittorrent,
+      clientType: qbittorrent.clientType || "Deluge",
+      baseUrl: qbittorrent.baseUrl || "",
+      username: qbittorrent.clientType === "Deluge" ? "" : qbittorrent.username || ""
+    });
     await onSaved();
     setMessage("Torrent client saved securely.");
   }
 
   async function saveSeedbox() {
     setMessage("Saving seedbox...");
-    await putJson("/api/connections/sftp-seedbox", sftpSeedbox);
+    await putJson("/api/connections/sftp-seedbox", {
+      ...sftpSeedbox,
+      host: sftpSeedbox.host || "",
+      port: Number(sftpSeedbox.port) || 22,
+      username: sftpSeedbox.username || "",
+      privateKeyPath: sftpSeedbox.privateKeyPath || "",
+      remoteRootPath: sftpSeedbox.remoteRootPath || ""
+    });
     await onSaved();
     setMessage("Seedbox saved securely.");
   }
@@ -229,7 +293,13 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
     setMessage("Saving auto-download...");
     await putJson("/api/connections/auto-download", {
       ...autoDownload,
-      allowedExtensions: autoDownload.allowedExtensionsText.split(",").map((item) => item.trim()).filter(Boolean)
+      allowedExtensions: autoDownload.allowedExtensionsText.split(",").map((item) => item.trim()).filter(Boolean),
+      transferRules: autoDownload.transferRules.map((rule) => ({
+        enabled: rule.enabled,
+        name: rule.name || "Rule",
+        remotePathPrefix: rule.remotePathPrefix || "",
+        localPath: rule.localPath || autoDownload.localImportPath || "/plex/import"
+      }))
     });
     await onSaved();
     setMessage("Auto-download saved.");
@@ -315,8 +385,43 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             <input type="checkbox" checked={autoDownload.overwriteExisting} onChange={(event) => setAutoDownload({ ...autoDownload, overwriteExisting: event.target.checked })} />
             Overwrite existing files
           </label>
-          <Input label="Local import path" value={autoDownload.localImportPath} onChange={(value) => setAutoDownload({ ...autoDownload, localImportPath: value })} placeholder="/plex/import" />
+          <Input label="Default local import path" value={autoDownload.localImportPath} onChange={(value) => setAutoDownload({ ...autoDownload, localImportPath: value })} placeholder="/plex/import" />
           <Input label="Allowed extensions" value={autoDownload.allowedExtensionsText} onChange={(value) => setAutoDownload({ ...autoDownload, allowedExtensionsText: value })} placeholder=".mkv, .mp4, .srt" />
+        </div>
+        <div className="mt-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-sm font-medium">Download folder rules</h4>
+            <button
+              onClick={() => setAutoDownload({
+                ...autoDownload,
+                transferRules: [...autoDownload.transferRules, { enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localImportPath || "/plex/import" }]
+              })}
+              className="rounded border border-line px-3 py-1 text-sm"
+            >
+              Add rule
+            </button>
+          </div>
+          {autoDownload.transferRules.map((rule, index) => (
+            <div key={`${rule.name}-${index}`} className="grid gap-3 rounded border border-line bg-panel p-3 md:grid-cols-[auto_1fr_1fr_1fr_auto]">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={rule.enabled}
+                  onChange={(event) => updateTransferRule(index, { enabled: event.target.checked })}
+                />
+                Enabled
+              </label>
+              <Input label="Name" value={rule.name} onChange={(value) => updateTransferRule(index, { name: value })} placeholder="Movies" />
+              <Input label="Remote folder" value={rule.remotePathPrefix} onChange={(value) => updateTransferRule(index, { remotePathPrefix: value })} placeholder="/downloads/movies" />
+              <Input label="Local destination" value={rule.localPath} onChange={(value) => updateTransferRule(index, { localPath: value })} placeholder="/plex/import/movies" />
+              <button
+                onClick={() => setAutoDownload({ ...autoDownload, transferRules: autoDownload.transferRules.filter((_, ruleIndex) => ruleIndex !== index) })}
+                className="self-end rounded border border-line px-3 py-2 text-sm"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
         </div>
         <button onClick={saveAutoDownload} className="mt-4 rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save auto-download</button>
       </div>
@@ -326,6 +431,14 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
       </div>
     </div>
   );
+
+  function updateTransferRule(index: number, patch: Partial<TransferRule>) {
+    setAutoDownload({
+      ...autoDownload,
+      transferRules: autoDownload.transferRules.map((rule, ruleIndex) =>
+        ruleIndex === index ? { ...rule, ...patch } : rule)
+    });
+  }
 }
 
 function Input({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string }) {
@@ -356,7 +469,7 @@ function Transfers({ transfers, settings }: { transfers: RemoteTransfer[]; setti
     <section className="space-y-4">
       <div className="grid gap-4 md:grid-cols-3">
         <Metric title="Auto download" value={settings?.enabled ? "Enabled" : "Disabled"} sub={settings?.sftpSeedbox.configured ? "SFTP configured" : "SFTP not configured"} />
-        <Metric title="Plex import path" value={settings?.localImportPath ?? "/plex/import"} sub="Downloaded files land here" />
+        <Metric title="Transfer rules" value={String(settings?.transferRules.length ?? 0)} sub="Routes by remote folder" />
         <Metric title="Completed transfers" value={String(transfers.filter((item) => item.status === "Completed").length)} sub="Skipped files are tracked too" />
       </div>
       <Table
