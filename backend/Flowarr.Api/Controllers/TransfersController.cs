@@ -32,6 +32,7 @@ public sealed class TransfersController(
             value.AutoDownload.LocalImportPath,
             value.AutoDownload.OverwriteExisting,
             value.AutoDownload.AllowedExtensions,
+            value.AutoDownload.LocalMediaPaths,
             value.AutoDownload.TransferRules,
             sftpSeedbox = new
             {

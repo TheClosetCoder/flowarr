@@ -13,7 +13,7 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 - Tracks media items, downloads, media files, storage locations, cleanup candidates, and audit logs.
 - Runs scheduled sync jobs through a .NET hosted service.
 - Starts with mock qBittorrent and Radarr integrations when credentials are not configured.
-- Can auto-download completed seedbox files over SFTP into a local Plex import folder.
+- Can auto-download completed seedbox files over SFTP into configured local media paths.
 - Lets you configure Deluge or qBittorrent, SFTP seedbox, and auto-download settings from the app.
 - Generates cleanup recommendations without deleting automatically.
 
@@ -49,11 +49,10 @@ FLOWARR_QBITTORRENT_USERNAME=
 FLOWARR_QBITTORRENT_PASSWORD=
 FLOWARR_RADARR_BASE_URL=
 FLOWARR_RADARR_API_KEY=
-FLOWARR_LOCAL_MEDIA_PATH=./data/media
+FLOWARR_MEDIA_ROOT=./data/media
 FLOWARR_SEEDBOX_MOUNT_PATH=./data/seedbox
 FLOWARR_SEEDBOX_PATH_OR_ENDPOINT=/seedbox
 FLOWARR_AUTO_DOWNLOAD_ENABLED=false
-FLOWARR_PLEX_IMPORT_PATH=./data/plex-import
 FLOWARR_AUTO_DOWNLOAD_OVERWRITE_EXISTING=false
 FLOWARR_SFTP_HOST=
 FLOWARR_SFTP_PORT=22
@@ -72,12 +71,12 @@ Flowarr__Cleanup__DryRun=true
 Flowarr__Storage__LocalPath=/media
 Flowarr__Storage__SeedboxPathOrEndpoint=/seedbox
 Flowarr__AutoDownload__Enabled=false
-Flowarr__AutoDownload__LocalImportPath=/plex/import
+Flowarr__AutoDownload__LocalImportPath=/media/import
 ```
 
 ## Ultra.cc / UltraSeedbox SFTP Auto-Download
 
-Flowarr can pull completed or seeding downloads from a remote seedbox over SFTP into a local Plex import folder.
+Flowarr can pull completed or seeding downloads from a remote seedbox over SFTP into one or more local media paths.
 
 You can configure Deluge or qBittorrent, SFTP seedbox, and auto-download settings from the Connections page in the app. Deluge Web only needs its web password; qBittorrent can use username and password. Passwords and key passphrases are encrypted before being stored in PostgreSQL using ASP.NET Core Data Protection. The Docker Compose file persists the encryption key ring in the `flowarr-keys` volume so saved credentials remain readable after container rebuilds.
 
@@ -85,7 +84,7 @@ You can also seed defaults with `.env`:
 
 ```bash
 FLOWARR_AUTO_DOWNLOAD_ENABLED=true
-FLOWARR_PLEX_IMPORT_PATH=/path/on/your/docker-host/plex-import
+FLOWARR_MEDIA_ROOT=/mnt/media
 FLOWARR_SFTP_HOST=your-ultra-sftp-host
 FLOWARR_SFTP_PORT=22
 FLOWARR_SFTP_USERNAME=your-ultra-username
@@ -105,10 +104,19 @@ Auto-download behavior:
 
 - It only processes downloads marked complete or seeding.
 - It can route different remote folders to different local destinations with transfer rules.
-- Example: `/downloads/movies` can go to `/plex/import/movies`, while `/downloads/tv` can go to `/plex/import/tv`.
+- Example: `/downloads/movies` can go to `/media/Movies`, while `/downloads/tv` can go to `/media/TV Shows`.
 - It skips existing files unless `FLOWARR_AUTO_DOWNLOAD_OVERWRITE_EXISTING=true`.
 - It records completed, skipped, and failed transfers in the transfer log and audit log.
 - It does not delete anything from the seedbox.
+
+For multiple disks, add extra bind mounts to the `api` service, then add matching local media paths in the app:
+
+```yaml
+volumes:
+  - /mnt/disk1/Movies:/media/Movies
+  - /mnt/disk2/TV Shows:/media/TV Shows
+  - /mnt/archive:/media/Archive
+```
 
 ## Credential Storage
 

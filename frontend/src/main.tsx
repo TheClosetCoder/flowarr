@@ -9,20 +9,25 @@ type DashboardSummary = {
   activeDownloads: number;
   recentImports: RecentImport[];
   cleanupCandidates: CleanupCandidateSummary[];
+  storageLocations: DashboardStorageLocation[];
+  downloads: DashboardDownload[];
 };
 
 type StorageSummary = { usedBytes: number; freeBytes: number };
 type RecentImport = { mediaItemId: string; title: string; importedAt: string };
 type CleanupCandidateSummary = { id: string; path: string; sizeBytes: number; reason: string; confidence: string; dryRun: boolean };
+type DashboardStorageLocation = { name: string; kind: string; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
+type DashboardDownload = { id: string; client: string; name: string; status: string; progress: number; sizeBytes: number; remotePath?: string; updatedAt: string };
 type DownloadItem = { id: string; name: string; client: string; status: string; progress: number; sizeBytes: number; remotePath?: string };
 type StorageLocation = { id: string; name: string; kind: string | number; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
 type RemoteTransfer = { id: string; provider: string; remotePath: string; localPath: string; bytesTransferred: number; status: string; message?: string; createdAt: string; completedAt?: string };
-type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; transferRules: TransferRule[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
-type TransferRule = { enabled: boolean; name: string; remotePathPrefix: string; localPath: string };
+type LocalMediaPath = { id?: string; enabled: boolean; name: string; path: string; role: string };
+type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
+type TransferRule = { id?: string; enabled: boolean; name: string; remotePathPrefix: string; localPath: string };
 type ConnectionSettings = {
   qbittorrent: { enabled: boolean; clientType: string; baseUrl: string; username: string; hasPassword: boolean };
   sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; remoteRootPath: string; hasPassword: boolean; hasPrivateKeyPassphrase: boolean };
-  autoDownload: { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; transferRules: TransferRule[] };
+  autoDownload: { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[] };
 };
 
 type RawConnectionSettings = Partial<ConnectionSettings> & {
@@ -131,7 +136,7 @@ function App() {
 
           {activePage === "Dashboard" && <Dashboard dashboard={dashboard} />}
           {activePage === "Connections" && <Connections settings={connectionSettings} onSaved={refreshSettings} />}
-          {activePage === "Storage" && <Storage storage={storage} />}
+          {activePage === "Storage" && <Storage storage={storage} setStorage={setStorage} />}
           {activePage === "Downloads" && <Downloads downloads={downloads} />}
           {activePage === "Transfers" && <Transfers transfers={transfers} settings={transferSettings} />}
           {activePage === "Cleanup" && <Cleanup candidates={candidates} setCandidates={setCandidates} />}
@@ -160,13 +165,17 @@ async function putJson(path: string, body: unknown) {
 function normalizeAutoDownload(autoDownload: Partial<ConnectionSettings["autoDownload"]> | undefined): ConnectionSettings["autoDownload"] {
   return {
     enabled: autoDownload?.enabled ?? false,
-    localImportPath: autoDownload?.localImportPath ?? "/plex/import",
+    localImportPath: autoDownload?.localImportPath ?? "/media/import",
     overwriteExisting: autoDownload?.overwriteExisting ?? false,
     allowedExtensions: autoDownload?.allowedExtensions ?? [".mkv", ".mp4", ".avi", ".mov", ".m4v", ".srt"],
-    transferRules: autoDownload?.transferRules ?? [
-      { enabled: true, name: "Movies", remotePathPrefix: "/downloads/movies", localPath: "/plex/import/movies" },
-      { enabled: true, name: "TV Shows", remotePathPrefix: "/downloads/tv", localPath: "/plex/import/tv" }
-    ]
+    localMediaPaths: (autoDownload?.localMediaPaths ?? [
+      { enabled: true, name: "Movies", path: "/media/Movies", role: "Movies" },
+      { enabled: true, name: "TV Shows", path: "/media/TV Shows", role: "TV" }
+    ]).map((path) => ({ ...path, id: path.id ?? crypto.randomUUID() })),
+    transferRules: (autoDownload?.transferRules ?? [
+      { enabled: true, name: "Movies", remotePathPrefix: "/downloads/movies", localPath: "/media/Movies" },
+      { enabled: true, name: "TV Shows", remotePathPrefix: "/downloads/tv", localPath: "/media/TV Shows" }
+    ]).map((rule) => ({ ...rule, id: rule.id ?? crypto.randomUUID() }))
   };
 }
 
@@ -202,6 +211,12 @@ function normalizeConnectionSettings(settings: RawConnectionSettings): Connectio
   };
 }
 
+async function postJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${apiBase}${path}`, { method: "POST" });
+  if (!response.ok) throw new Error(`Request failed: ${path}`);
+  return response.json();
+}
+
 function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
   return (
     <section className="space-y-5">
@@ -211,6 +226,12 @@ function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
         <Metric title="Active downloads" value={String(dashboard?.activeDownloads ?? 0)} sub="Torrent client sync status" />
         <Metric title="Cleanup candidates" value={String(dashboard?.cleanupCandidates.length ?? 0)} sub="Manual review required" />
       </div>
+      <TwoColumn
+        leftTitle="Storage paths"
+        leftItems={(dashboard?.storageLocations ?? []).map((item) => `${item.name}: ${formatBytes(item.usedBytes)} used, ${formatBytes(item.freeBytes)} free at ${item.pathOrEndpoint}`)}
+        rightTitle="Torrent client"
+        rightItems={(dashboard?.downloads ?? []).map((item) => `${item.name} - ${item.status} (${Math.round(item.progress * 100)}%)`)}
+      />
       <TwoColumn
         leftTitle="Recent imports"
         leftItems={(dashboard?.recentImports ?? []).map((item) => `${item.title} imported ${new Date(item.importedAt).toLocaleString()}`)}
@@ -294,11 +315,17 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
     await putJson("/api/connections/auto-download", {
       ...autoDownload,
       allowedExtensions: autoDownload.allowedExtensionsText.split(",").map((item) => item.trim()).filter(Boolean),
+      localMediaPaths: autoDownload.localMediaPaths.map((path) => ({
+        enabled: path.enabled,
+        name: path.name || "Media path",
+        path: path.path || "/media",
+        role: path.role || "Mixed"
+      })),
       transferRules: autoDownload.transferRules.map((rule) => ({
         enabled: rule.enabled,
         name: rule.name || "Rule",
         remotePathPrefix: rule.remotePathPrefix || "",
-        localPath: rule.localPath || autoDownload.localImportPath || "/plex/import"
+        localPath: rule.localPath || autoDownload.localImportPath || "/media/import"
       }))
     });
     await onSaved();
@@ -385,8 +412,43 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             <input type="checkbox" checked={autoDownload.overwriteExisting} onChange={(event) => setAutoDownload({ ...autoDownload, overwriteExisting: event.target.checked })} />
             Overwrite existing files
           </label>
-          <Input label="Default local import path" value={autoDownload.localImportPath} onChange={(value) => setAutoDownload({ ...autoDownload, localImportPath: value })} placeholder="/plex/import" />
+          <Input label="Legacy fallback destination" value={autoDownload.localImportPath} onChange={(value) => setAutoDownload({ ...autoDownload, localImportPath: value })} placeholder="/media/import" />
           <Input label="Allowed extensions" value={autoDownload.allowedExtensionsText} onChange={(value) => setAutoDownload({ ...autoDownload, allowedExtensionsText: value })} placeholder=".mkv, .mp4, .srt" />
+        </div>
+        <div className="mt-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-sm font-medium">Local media paths</h4>
+            <button
+              onClick={() => setAutoDownload({
+                ...autoDownload,
+                localMediaPaths: [...autoDownload.localMediaPaths, { id: crypto.randomUUID(), enabled: true, name: "New path", path: "/media", role: "Mixed" }]
+              })}
+              className="rounded border border-line px-3 py-1 text-sm"
+            >
+              Add path
+            </button>
+          </div>
+          {autoDownload.localMediaPaths.map((path, index) => (
+            <div key={path.id ?? index} className="grid gap-3 rounded border border-line bg-panel p-3 md:grid-cols-[auto_1fr_1fr_1fr_auto]">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={path.enabled}
+                  onChange={(event) => updateLocalMediaPath(index, { enabled: event.target.checked })}
+                />
+                Enabled
+              </label>
+              <Input label="Name" value={path.name} onChange={(value) => updateLocalMediaPath(index, { name: value })} placeholder="Movies" />
+              <Input label="Container path" value={path.path} onChange={(value) => updateLocalMediaPath(index, { path: value })} placeholder="/media/Movies" />
+              <Input label="Role" value={path.role} onChange={(value) => updateLocalMediaPath(index, { role: value })} placeholder="Movies" />
+              <button
+                onClick={() => setAutoDownload({ ...autoDownload, localMediaPaths: autoDownload.localMediaPaths.filter((_, pathIndex) => pathIndex !== index) })}
+                className="self-end rounded border border-line px-3 py-2 text-sm"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
         </div>
         <div className="mt-5 space-y-3">
           <div className="flex items-center justify-between gap-3">
@@ -394,7 +456,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             <button
               onClick={() => setAutoDownload({
                 ...autoDownload,
-                transferRules: [...autoDownload.transferRules, { enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localImportPath || "/plex/import" }]
+                transferRules: [...autoDownload.transferRules, { id: crypto.randomUUID(), enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localMediaPaths[0]?.path || autoDownload.localImportPath || "/media/import" }]
               })}
               className="rounded border border-line px-3 py-1 text-sm"
             >
@@ -402,7 +464,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             </button>
           </div>
           {autoDownload.transferRules.map((rule, index) => (
-            <div key={`${rule.name}-${index}`} className="grid gap-3 rounded border border-line bg-panel p-3 md:grid-cols-[auto_1fr_1fr_1fr_auto]">
+            <div key={rule.id ?? index} className="grid gap-3 rounded border border-line bg-panel p-3 md:grid-cols-[auto_1fr_1fr_1fr_auto]">
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -413,7 +475,16 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
               </label>
               <Input label="Name" value={rule.name} onChange={(value) => updateTransferRule(index, { name: value })} placeholder="Movies" />
               <Input label="Remote folder" value={rule.remotePathPrefix} onChange={(value) => updateTransferRule(index, { remotePathPrefix: value })} placeholder="/downloads/movies" />
-              <Input label="Local destination" value={rule.localPath} onChange={(value) => updateTransferRule(index, { localPath: value })} placeholder="/plex/import/movies" />
+              <label className="grid gap-1 text-sm">
+                <span className="text-slate-600">Local destination</span>
+                <input
+                  list="local-media-paths"
+                  value={rule.localPath}
+                  onChange={(event) => updateTransferRule(index, { localPath: event.target.value })}
+                  placeholder="/media/Movies"
+                  className="rounded border border-line px-3 py-2 text-ink outline-none focus:border-accent"
+                />
+              </label>
               <button
                 onClick={() => setAutoDownload({ ...autoDownload, transferRules: autoDownload.transferRules.filter((_, ruleIndex) => ruleIndex !== index) })}
                 className="self-end rounded border border-line px-3 py-2 text-sm"
@@ -424,6 +495,11 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
           ))}
         </div>
         <button onClick={saveAutoDownload} className="mt-4 rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save auto-download</button>
+        <datalist id="local-media-paths">
+          {autoDownload.localMediaPaths.map((path) => (
+            <option key={path.id ?? path.path} value={path.path}>{path.name}</option>
+          ))}
+        </datalist>
       </div>
 
       <div className="flex items-center gap-3">
@@ -437,6 +513,14 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
       ...autoDownload,
       transferRules: autoDownload.transferRules.map((rule, ruleIndex) =>
         ruleIndex === index ? { ...rule, ...patch } : rule)
+    });
+  }
+
+  function updateLocalMediaPath(index: number, patch: Partial<LocalMediaPath>) {
+    setAutoDownload({
+      ...autoDownload,
+      localMediaPaths: autoDownload.localMediaPaths.map((path, pathIndex) =>
+        pathIndex === index ? { ...path, ...patch } : path)
     });
   }
 }
@@ -456,8 +540,35 @@ function Input({ label, value, onChange, placeholder, type = "text" }: { label: 
   );
 }
 
-function Storage({ storage }: { storage: StorageLocation[] }) {
-  return <Table rows={storage.map((item) => [item.name, String(item.kind), item.pathOrEndpoint, formatBytes(item.usedBytes), formatBytes(item.freeBytes)])} headers={["Name", "Kind", "Path/API", "Used", "Free"]} />;
+function Storage({ storage, setStorage }: { storage: StorageLocation[]; setStorage: (items: StorageLocation[]) => void }) {
+  const [message, setMessage] = React.useState("");
+
+  async function scanNow() {
+    setMessage("Scanning...");
+    const updated = await postJson<StorageLocation[]>("/api/storage/scan");
+    setStorage(updated);
+    setMessage("Storage scan complete.");
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-3">
+        <button onClick={scanNow} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Scan now</button>
+        <p className="text-sm text-slate-600">{message}</p>
+      </div>
+      <Table
+        rows={storage.map((item) => [
+          item.name,
+          String(item.kind),
+          item.pathOrEndpoint,
+          formatBytes(item.usedBytes),
+          formatBytes(item.freeBytes),
+          new Date(item.lastScannedAt).toLocaleString()
+        ])}
+        headers={["Name", "Kind", "Path/API", "Used", "Free", "Last scanned"]}
+      />
+    </section>
+  );
 }
 
 function Downloads({ downloads }: { downloads: DownloadItem[] }) {
@@ -469,7 +580,7 @@ function Transfers({ transfers, settings }: { transfers: RemoteTransfer[]; setti
     <section className="space-y-4">
       <div className="grid gap-4 md:grid-cols-3">
         <Metric title="Auto download" value={settings?.enabled ? "Enabled" : "Disabled"} sub={settings?.sftpSeedbox.configured ? "SFTP configured" : "SFTP not configured"} />
-        <Metric title="Transfer rules" value={String(settings?.transferRules.length ?? 0)} sub="Routes by remote folder" />
+        <Metric title="Local paths" value={String(settings?.localMediaPaths.length ?? 0)} sub="Media destinations" />
         <Metric title="Completed transfers" value={String(transfers.filter((item) => item.status === "Completed").length)} sub="Skipped files are tracked too" />
       </div>
       <Table
@@ -532,7 +643,7 @@ function SettingsPanel({ transferSettings }: { transferSettings: TransferSetting
           <p>Enabled: {String(transferSettings?.enabled ?? false)}</p>
           <p>SFTP configured: {String(transferSettings?.sftpSeedbox.configured ?? false)}</p>
           <p>Host: {transferSettings?.sftpSeedbox.host || "not set"}</p>
-          <p>Local import: {transferSettings?.localImportPath ?? "/plex/import"}</p>
+          <p>Local paths: {String(transferSettings?.localMediaPaths.length ?? 0)}</p>
         </div>
       </div>
     </section>

@@ -80,6 +80,7 @@ public sealed class ConnectionSettingsService(
             Get(settings, "localImportPath", options.Value.AutoDownload.LocalImportPath),
             GetBool(settings, "overwriteExisting", options.Value.AutoDownload.OverwriteExisting),
             GetStringArray(settings, "allowedExtensions", options.Value.AutoDownload.AllowedExtensions),
+            GetLocalMediaPaths(settings, options.Value.Storage.LocalPath),
             GetTransferRules(settings, options.Value.AutoDownload.LocalImportPath));
     }
 
@@ -160,6 +161,7 @@ public sealed class ConnectionSettingsService(
                 ["localImportPath"] = request.LocalImportPath,
                 ["overwriteExisting"] = request.OverwriteExisting.ToString(),
                 ["allowedExtensions"] = string.Join(',', request.AllowedExtensions ?? []),
+                ["localMediaPaths"] = JsonSerializer.Serialize(request.LocalMediaPaths ?? [], JsonOptions),
                 ["transferRules"] = JsonSerializer.Serialize(request.TransferRules ?? [], JsonOptions)
             },
             [],
@@ -255,6 +257,18 @@ public sealed class ConnectionSettingsService(
             ? []
             : [new TransferRuleSettings(true, "Default", string.Empty, fallbackLocalImportPath)];
     }
+
+    private static LocalMediaPathSettings[] GetLocalMediaPaths(IReadOnlyDictionary<string, string?> values, string fallbackLocalPath)
+    {
+        if (values.TryGetValue("localMediaPaths", out var value) && !string.IsNullOrWhiteSpace(value))
+        {
+            return JsonSerializer.Deserialize<LocalMediaPathSettings[]>(value, JsonOptions) ?? [];
+        }
+
+        return string.IsNullOrWhiteSpace(fallbackLocalPath)
+            ? []
+            : [new LocalMediaPathSettings(true, "Media", fallbackLocalPath, "Mixed")];
+    }
 }
 
 public sealed record ConnectionSettingsSnapshot(
@@ -287,7 +301,14 @@ public sealed record AutoDownloadConnectionSettings(
     string LocalImportPath,
     bool OverwriteExisting,
     string[] AllowedExtensions,
+    LocalMediaPathSettings[] LocalMediaPaths,
     TransferRuleSettings[] TransferRules);
+
+public sealed record LocalMediaPathSettings(
+    bool Enabled,
+    string Name,
+    string Path,
+    string Role);
 
 public sealed record TransferRuleSettings(
     bool Enabled,
@@ -320,4 +341,5 @@ public sealed record SaveAutoDownloadConnectionRequest(
     string? LocalImportPath,
     bool OverwriteExisting,
     string[]? AllowedExtensions,
+    LocalMediaPathSettings[]? LocalMediaPaths,
     TransferRuleSettings[]? TransferRules);

@@ -1,54 +1,240 @@
 using Flowarr.Core.Enums;
 using Flowarr.Core.Integrations;
 using Flowarr.Infrastructure.Options;
+using Flowarr.Infrastructure.Services;
 using Microsoft.Extensions.Options;
+using Renci.SshNet;
+using Renci.SshNet.Sftp;
 
 namespace Flowarr.Infrastructure.Integrations;
 
-public sealed class LocalStorageScanner(IOptions<IntegrationOptions> options) : IStorageScanner
+public sealed class LocalStorageScanner(
+    IConnectionSettingsService connectionSettingsService,
+    IOptions<IntegrationOptions> options) : IStorageScanner
 {
-    public Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(CancellationToken cancellationToken = default)
     {
-        var path = options.Value.Storage.LocalPath;
-        var snapshot = Directory.Exists(path)
-            ? BuildSnapshot("Local media", StorageKind.Local, path)
-            : new StorageSnapshot("Local media", StorageKind.Local, path, 0, 0);
+        var autoDownload = await connectionSettingsService.GetAutoDownloadAsync(cancellationToken);
+        var paths = autoDownload.LocalMediaPaths
+            .Where(path => path.Enabled && !string.IsNullOrWhiteSpace(path.Path))
+            .Select(path => new { Name = $"Local: {path.Name}", Path = path.Path })
+            .Concat(autoDownload.TransferRules
+                .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.LocalPath))
+                .Select(rule => new { Name = $"Local rule: {rule.Name}", Path = rule.LocalPath }))
+            .Concat([new { Name = "Local media", Path = options.Value.Storage.LocalPath }])
+            .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
 
-        return Task.FromResult<IReadOnlyCollection<StorageSnapshot>>([snapshot]);
+        return paths.Select(item => BuildSnapshot(item.Name, item.Path)).ToList();
     }
 
-    private static StorageSnapshot BuildSnapshot(string name, StorageKind kind, string path)
+    private static StorageSnapshot BuildSnapshot(string name, string path)
     {
+        if (!Directory.Exists(path))
+        {
+            return new StorageSnapshot(name, StorageKind.Local, path, 0, 0);
+        }
+
+        var used = EnumerateLocalBytes(path);
         var root = Path.GetPathRoot(Path.GetFullPath(path));
         var drive = string.IsNullOrWhiteSpace(root) ? null : new DriveInfo(root);
-        var used = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
-            .Select(file => new FileInfo(file).Length)
-            .Sum();
 
-        return new StorageSnapshot(name, kind, path, used, drive?.AvailableFreeSpace ?? 0);
+        return new StorageSnapshot(name, StorageKind.Local, path, used, drive?.AvailableFreeSpace ?? 0);
+    }
+
+    private static long EnumerateLocalBytes(string path)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
+                .Select(file =>
+                {
+                    try
+                    {
+                        return new FileInfo(file).Length;
+                    }
+                    catch
+                    {
+                        return 0L;
+                    }
+                })
+                .Sum();
+        }
+        catch
+        {
+            return 0;
+        }
     }
 }
 
-public sealed class SeedboxStorageScanner(IOptions<IntegrationOptions> options) : IStorageScanner
+public sealed class SeedboxStorageScanner(
+    IConnectionSettingsService connectionSettingsService,
+    IOptions<IntegrationOptions> options) : IStorageScanner
 {
-    public Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(CancellationToken cancellationToken = default)
     {
-        var target = options.Value.Storage.SeedboxPathOrEndpoint;
-        var snapshot = Directory.Exists(target)
-            ? BuildSnapshot(target)
-            : new StorageSnapshot("Seedbox", StorageKind.Seedbox, target, 7_516_192_768, 42_949_672_960);
+        var seedbox = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
+        var autoDownload = await connectionSettingsService.GetAutoDownloadAsync(cancellationToken);
 
-        return Task.FromResult<IReadOnlyCollection<StorageSnapshot>>([snapshot]);
+        if (!IsConfigured(seedbox))
+        {
+            var fallback = options.Value.Storage.SeedboxPathOrEndpoint;
+            return Directory.Exists(fallback)
+                ? [BuildMountedSeedboxSnapshot("Seedbox mount", fallback)]
+                : [new StorageSnapshot("Seedbox", StorageKind.Seedbox, fallback, 0, 0)];
+        }
+
+        var remotePaths = autoDownload.TransferRules
+            .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.RemotePathPrefix))
+            .Select(rule => new { Name = $"Seedbox: {rule.Name}", Path = NormalizeRemotePath(seedbox.RemoteRootPath, rule.RemotePathPrefix) })
+            .Append(new { Name = "Seedbox root", Path = NormalizeRemotePath(seedbox.RemoteRootPath, string.Empty) })
+            .Where(item => !string.IsNullOrWhiteSpace(item.Path))
+            .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+
+        if (remotePaths.Count == 0)
+        {
+            remotePaths.Add(new { Name = "Seedbox root", Path = seedbox.RemoteRootPath });
+        }
+
+        return await Task.Run<IReadOnlyCollection<StorageSnapshot>>(() =>
+        {
+            var snapshots = new List<StorageSnapshot>();
+            using var client = CreateClient(seedbox);
+            client.Connect();
+
+            foreach (var remotePath in remotePaths)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                snapshots.Add(BuildSftpSnapshot(client, remotePath.Name, remotePath.Path, cancellationToken));
+            }
+
+            client.Disconnect();
+            return snapshots;
+        }, cancellationToken);
     }
 
-    private static StorageSnapshot BuildSnapshot(string path)
+    private static bool IsConfigured(SftpSeedboxConnectionSettings seedbox)
     {
+        return seedbox.Enabled &&
+               !string.IsNullOrWhiteSpace(seedbox.Host) &&
+               !string.IsNullOrWhiteSpace(seedbox.Username) &&
+               (!string.IsNullOrWhiteSpace(seedbox.Password) ||
+                !string.IsNullOrWhiteSpace(seedbox.PrivateKeyPath));
+    }
+
+    private static SftpClient CreateClient(SftpSeedboxConnectionSettings seedbox)
+    {
+        if (!string.IsNullOrWhiteSpace(seedbox.PrivateKeyPath))
+        {
+            var keyFile = string.IsNullOrWhiteSpace(seedbox.PrivateKeyPassphrase)
+                ? new PrivateKeyFile(seedbox.PrivateKeyPath)
+                : new PrivateKeyFile(seedbox.PrivateKeyPath, seedbox.PrivateKeyPassphrase);
+
+            return new SftpClient(seedbox.Host, seedbox.Port, seedbox.Username, keyFile);
+        }
+
+        return new SftpClient(seedbox.Host, seedbox.Port, seedbox.Username, seedbox.Password);
+    }
+
+    private static StorageSnapshot BuildSftpSnapshot(
+        SftpClient client,
+        string name,
+        string remotePath,
+        CancellationToken cancellationToken)
+    {
+        if (!client.Exists(remotePath))
+        {
+            return new StorageSnapshot(name, StorageKind.Seedbox, remotePath, 0, 0);
+        }
+
+        var used = GetRemoteUsedBytes(client, remotePath, cancellationToken);
+        var free = GetRemoteFreeBytes(client, remotePath);
+        return new StorageSnapshot(name, StorageKind.Seedbox, remotePath, used, free);
+    }
+
+    private static long GetRemoteUsedBytes(SftpClient client, string remotePath, CancellationToken cancellationToken)
+    {
+        var attributes = client.GetAttributes(remotePath);
+        if (!attributes.IsDirectory)
+        {
+            return attributes.Size;
+        }
+
+        var total = 0L;
+        foreach (var entry in client.ListDirectory(remotePath))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (entry.Name is "." or "..")
+            {
+                continue;
+            }
+
+            try
+            {
+                total += entry.IsDirectory
+                    ? GetRemoteUsedBytes(client, entry.FullName, cancellationToken)
+                    : entry.Attributes.Size;
+            }
+            catch
+            {
+                // A file can disappear while the seedbox is active; skip transient scan failures.
+            }
+        }
+
+        return total;
+    }
+
+    private static long GetRemoteFreeBytes(SftpClient client, string remotePath)
+    {
+        try
+        {
+            var status = client.GetStatus(remotePath);
+            return (long)status.AvailableBlocks * (long)status.BlockSize;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static string NormalizeRemotePath(string root, string remotePath)
+    {
+        if (!string.IsNullOrWhiteSpace(remotePath) && remotePath.StartsWith("/", StringComparison.Ordinal))
+        {
+            return remotePath;
+        }
+
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return remotePath;
+        }
+
+        return string.IsNullOrWhiteSpace(remotePath)
+            ? root
+            : $"{root.TrimEnd('/')}/{remotePath.TrimStart('/')}";
+    }
+
+    private static StorageSnapshot BuildMountedSeedboxSnapshot(string name, string path)
+    {
+        var used = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
+            .Select(file =>
+            {
+                try
+                {
+                    return new FileInfo(file).Length;
+                }
+                catch
+                {
+                    return 0L;
+                }
+            })
+            .Sum();
         var root = Path.GetPathRoot(Path.GetFullPath(path));
         var drive = string.IsNullOrWhiteSpace(root) ? null : new DriveInfo(root);
-        var used = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
-            .Select(file => new FileInfo(file).Length)
-            .Sum();
 
-        return new StorageSnapshot("Seedbox", StorageKind.Seedbox, path, used, drive?.AvailableFreeSpace ?? 0);
+        return new StorageSnapshot(name, StorageKind.Seedbox, path, used, drive?.AvailableFreeSpace ?? 0);
     }
 }

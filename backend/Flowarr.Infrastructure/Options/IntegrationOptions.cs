@@ -37,7 +37,7 @@ public sealed class CleanupOptions
 public sealed class AutoDownloadOptions
 {
     public bool Enabled { get; set; }
-    public string LocalImportPath { get; set; } = "/plex/import";
+    public string LocalImportPath { get; set; } = "/media/import";
     public bool OverwriteExisting { get; set; }
     public string[] AllowedExtensions { get; set; } = [".mkv", ".mp4", ".avi", ".mov", ".m4v", ".srt"];
 }
