@@ -442,6 +442,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
               <Input label="Username" value={qbittorrent.username} onChange={(value) => setQbittorrent({ ...qbittorrent, username: value })} />
             )}
             <Input label={qbittorrent.hasPassword ? "Password (already saved)" : "Password"} type="password" value={qbittorrent.password} onChange={(value) => setQbittorrent({ ...qbittorrent, password: value })} placeholder={qbittorrent.hasPassword ? "Leave blank to keep current" : ""} />
+            <p className="text-xs text-slate-500">Leave blank to use the saved encrypted password. Typed passwords are sent once to the Flowarr API for save/test.</p>
             {qbittorrent.hasPassword && (
               <label className="flex items-center gap-2 text-sm text-slate-600">
                 <input type="checkbox" checked={qbittorrent.clearPassword} onChange={(event) => setQbittorrent({ ...qbittorrent, clearPassword: event.target.checked })} />
@@ -469,6 +470,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             <Input label="Port" value={String(sftpSeedbox.port)} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, port: Number(value) || 22 })} />
             <Input label="Username" value={sftpSeedbox.username} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, username: value })} />
             <Input label={sftpSeedbox.hasPassword ? "Password (already saved)" : "Password"} type="password" value={sftpSeedbox.password} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, password: value })} placeholder={sftpSeedbox.hasPassword ? "Leave blank to keep current" : ""} />
+            <p className="text-xs text-slate-500">Leave blank to use the saved encrypted password. Typed passwords are sent once to the Flowarr API for save/test.</p>
             <Input label="Private key path" value={sftpSeedbox.privateKeyPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, privateKeyPath: value })} placeholder="/keys/id_rsa" />
             <Input label={sftpSeedbox.hasPrivateKeyPassphrase ? "Key passphrase (already saved)" : "Key passphrase"} type="password" value={sftpSeedbox.privateKeyPassphrase} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, privateKeyPassphrase: value })} />
             <Input label="Remote root path" value={sftpSeedbox.remoteRootPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, remoteRootPath: value })} placeholder="/home/user/files" />

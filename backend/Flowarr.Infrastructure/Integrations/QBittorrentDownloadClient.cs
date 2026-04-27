@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -158,7 +159,8 @@ public sealed class QBittorrentDownloadClient(
         var request = JsonSerializer.Serialize(
             new DelugeRequest(method, parameters, Interlocked.Increment(ref _delugeRequestId)),
             JsonOptions);
-        using var content = new StringContent(request, Encoding.UTF8, "application/json");
+        using var content = new ByteArrayContent(Encoding.UTF8.GetBytes(request));
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         var response = await httpClient.PostAsync("json", content, cancellationToken);
         response.EnsureSuccessStatusCode();
 
