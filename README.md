@@ -14,6 +14,7 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 - Runs scheduled sync jobs through a .NET hosted service.
 - Starts with mock qBittorrent and Radarr integrations when credentials are not configured.
 - Can auto-download completed seedbox files over SFTP into a local Plex import folder.
+- Lets you configure qBittorrent, SFTP seedbox, and auto-download settings from the app.
 - Generates cleanup recommendations without deleting automatically.
 
 ## What Flowarr Does Not Do
@@ -78,7 +79,9 @@ Flowarr__AutoDownload__LocalImportPath=/plex/import
 
 Flowarr can pull completed or seeding downloads from a remote seedbox over SFTP into a local Plex import folder.
 
-Set these values in `.env`:
+You can configure qBittorrent, SFTP seedbox, and auto-download settings from the Connections page in the app. Passwords and key passphrases are encrypted before being stored in PostgreSQL using ASP.NET Core Data Protection. The Docker Compose file persists the encryption key ring in the `flowarr-keys` volume so saved credentials remain readable after container rebuilds.
+
+You can also seed defaults with `.env`:
 
 ```bash
 FLOWARR_AUTO_DOWNLOAD_ENABLED=true
@@ -105,6 +108,13 @@ Auto-download behavior:
 - It skips existing files unless `FLOWARR_AUTO_DOWNLOAD_OVERWRITE_EXISTING=true`.
 - It records completed, skipped, and failed transfers in the transfer log and audit log.
 - It does not delete anything from the seedbox.
+
+## Credential Storage
+
+- Secret fields are never returned by the API after save.
+- The app returns `hasPassword` and `hasPrivateKeyPassphrase` flags instead.
+- Secrets are encrypted at rest before being written to PostgreSQL.
+- Keep the `flowarr-keys` Docker volume. Removing it can make existing encrypted credentials unreadable.
 
 ## MVP Cleanup Rules
 

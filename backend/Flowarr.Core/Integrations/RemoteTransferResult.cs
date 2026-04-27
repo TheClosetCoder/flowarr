@@ -9,6 +9,6 @@ public sealed record RemoteTransferResult(
 
 public interface IRemoteFileTransferClient
 {
-    bool IsConfigured { get; }
+    Task<bool> IsConfiguredAsync(CancellationToken cancellationToken = default);
     Task<RemoteTransferResult> DownloadAsync(string remotePath, string localRootPath, CancellationToken cancellationToken = default);
 }

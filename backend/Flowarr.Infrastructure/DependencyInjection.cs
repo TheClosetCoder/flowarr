@@ -20,14 +20,10 @@ public static class DependencyInjection
             ?? "Host=localhost;Port=5432;Database=flowarr;Username=flowarr;Password=flowarr";
 
         services.AddDbContext<FlowarrDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddScoped<IConnectionSettingsService, ConnectionSettingsService>();
         services.AddScoped<ICleanupRecommendationService, CleanupRecommendationService>();
-        services.AddScoped<IDownloadClient>(provider =>
-        {
-            var configuredOptions = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<IntegrationOptions>>();
-            return string.IsNullOrWhiteSpace(configuredOptions.Value.QBittorrent.BaseUrl)
-                ? new MockDownloadClient()
-                : ActivatorUtilities.CreateInstance<QBittorrentDownloadClient>(provider);
-        });
+        services.AddScoped<MockDownloadClient>();
+        services.AddScoped<IDownloadClient, QBittorrentDownloadClient>();
         services.AddScoped<IMediaCatalogClient, MockRadarrClient>();
         services.AddScoped<IRemoteFileTransferClient, SftpSeedboxTransferClient>();
         services.AddScoped<LocalStorageScanner>();

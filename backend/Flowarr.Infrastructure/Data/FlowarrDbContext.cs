@@ -17,4 +17,5 @@ public class FlowarrDbContext : DbContext
     public DbSet<CleanupCandidate> CleanupCandidates => Set<CleanupCandidate>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<RemoteTransfer> RemoteTransfers => Set<RemoteTransfer>();
+    public DbSet<IntegrationConnection> IntegrationConnections => Set<IntegrationConnection>();
 }

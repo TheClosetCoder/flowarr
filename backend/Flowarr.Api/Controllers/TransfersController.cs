@@ -1,8 +1,7 @@
 using Flowarr.Infrastructure.Data;
-using Flowarr.Infrastructure.Options;
+using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace Flowarr.Api.Controllers;
 
@@ -10,7 +9,7 @@ namespace Flowarr.Api.Controllers;
 [Route("api/transfers")]
 public sealed class TransfersController(
     FlowarrDbContext dbContext,
-    IOptions<IntegrationOptions> options) : ControllerBase
+    IConnectionSettingsService connectionSettingsService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -24,9 +23,9 @@ public sealed class TransfersController(
     }
 
     [HttpGet("settings")]
-    public IActionResult GetSettings()
+    public async Task<IActionResult> GetSettings(CancellationToken cancellationToken)
     {
-        var value = options.Value;
+        var value = await connectionSettingsService.GetSnapshotAsync(cancellationToken);
         return Ok(new
         {
             value.AutoDownload.Enabled,
@@ -35,7 +34,8 @@ public sealed class TransfersController(
             value.AutoDownload.AllowedExtensions,
             sftpSeedbox = new
             {
-                configured = !string.IsNullOrWhiteSpace(value.SftpSeedbox.Host) &&
+                configured = value.SftpSeedbox.Enabled &&
+                             !string.IsNullOrWhiteSpace(value.SftpSeedbox.Host) &&
                              !string.IsNullOrWhiteSpace(value.SftpSeedbox.Username) &&
                              (!string.IsNullOrWhiteSpace(value.SftpSeedbox.Password) ||
                               !string.IsNullOrWhiteSpace(value.SftpSeedbox.PrivateKeyPath)),

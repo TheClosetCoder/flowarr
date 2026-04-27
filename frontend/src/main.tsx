@@ -18,6 +18,11 @@ type DownloadItem = { id: string; name: string; client: string; status: string; 
 type StorageLocation = { id: string; name: string; kind: string | number; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
 type RemoteTransfer = { id: string; provider: string; remotePath: string; localPath: string; bytesTransferred: number; status: string; message?: string; createdAt: string; completedAt?: string };
 type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
+type ConnectionSettings = {
+  qbittorrent: { enabled: boolean; baseUrl: string; username: string; hasPassword: boolean };
+  sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; remoteRootPath: string; hasPassword: boolean; hasPrivateKeyPassphrase: boolean };
+  autoDownload: { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[] };
+};
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -36,6 +41,16 @@ function App() {
   const [candidates, setCandidates] = React.useState<CleanupCandidateSummary[]>([]);
   const [transfers, setTransfers] = React.useState<RemoteTransfer[]>([]);
   const [transferSettings, setTransferSettings] = React.useState<TransferSettings | null>(null);
+  const [connectionSettings, setConnectionSettings] = React.useState<ConnectionSettings | null>(null);
+
+  const refreshSettings = React.useCallback(async () => {
+    const [transfersSettings, connectionsSettings] = await Promise.all([
+      fetchJson<TransferSettings>("/api/transfers/settings"),
+      fetchJson<ConnectionSettings>("/api/connections/settings")
+    ]);
+    setTransferSettings(transfersSettings);
+    setConnectionSettings(connectionsSettings);
+  }, []);
 
   React.useEffect(() => {
     void Promise.all([
@@ -44,9 +59,9 @@ function App() {
       fetchJson<StorageLocation[]>("/api/storage").then(setStorage),
       fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates").then(setCandidates),
       fetchJson<RemoteTransfer[]>("/api/transfers").then(setTransfers),
-      fetchJson<TransferSettings>("/api/transfers/settings").then(setTransferSettings)
+      refreshSettings()
     ]);
-  }, []);
+  }, [refreshSettings]);
 
   const pages = [
     { name: "Dashboard", icon: Activity },
@@ -108,7 +123,7 @@ function App() {
           </div>
 
           {activePage === "Dashboard" && <Dashboard dashboard={dashboard} />}
-          {activePage === "Connections" && <Connections />}
+          {activePage === "Connections" && <Connections settings={connectionSettings} onSaved={refreshSettings} />}
           {activePage === "Storage" && <Storage storage={storage} />}
           {activePage === "Downloads" && <Downloads downloads={downloads} />}
           {activePage === "Transfers" && <Transfers transfers={transfers} settings={transferSettings} />}
@@ -124,6 +139,15 @@ async function fetchJson<T>(path: string): Promise<T> {
   const response = await fetch(`${apiBase}${path}`);
   if (!response.ok) throw new Error(`Request failed: ${path}`);
   return response.json();
+}
+
+async function putJson(path: string, body: unknown) {
+  const response = await fetch(`${apiBase}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) throw new Error(`Request failed: ${path}`);
 }
 
 function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
@@ -145,8 +169,21 @@ function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
   );
 }
 
-function Connections() {
-  const integrations = ["qBittorrent", "Radarr", "SFTP seedbox", "Sonarr", "Plex", "Jellyfin"];
+function Connections({ settings, onSaved }: { settings: ConnectionSettings | null; onSaved: () => Promise<void> }) {
+  if (!settings) {
+    return <p className="text-sm text-slate-600">Loading connection settings...</p>;
+  }
+
+  return (
+    <section className="space-y-4">
+      <ConnectionForms settings={settings} onSaved={onSaved} />
+      <PlaceholderConnections />
+    </section>
+  );
+}
+
+function PlaceholderConnections() {
+  const integrations = ["Radarr", "Sonarr", "Plex", "Jellyfin"];
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {integrations.map((name) => (
@@ -159,6 +196,123 @@ function Connections() {
         </div>
       ))}
     </section>
+  );
+}
+
+function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; onSaved: () => Promise<void> }) {
+  const [qbittorrent, setQbittorrent] = React.useState({ ...settings.qbittorrent, password: "", clearPassword: false });
+  const [sftpSeedbox, setSftpSeedbox] = React.useState({ ...settings.sftpSeedbox, password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
+  const [autoDownload, setAutoDownload] = React.useState({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
+  const [message, setMessage] = React.useState("");
+
+  React.useEffect(() => {
+    setQbittorrent({ ...settings.qbittorrent, password: "", clearPassword: false });
+    setSftpSeedbox({ ...settings.sftpSeedbox, password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
+    setAutoDownload({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
+  }, [settings]);
+
+  async function saveAll() {
+    setMessage("Saving...");
+    await putJson("/api/connections/qbittorrent", qbittorrent);
+    await putJson("/api/connections/sftp-seedbox", sftpSeedbox);
+    await putJson("/api/connections/auto-download", {
+      ...autoDownload,
+      allowedExtensions: autoDownload.allowedExtensionsText.split(",").map((item) => item.trim()).filter(Boolean)
+    });
+    await onSaved();
+    setMessage("Saved securely.");
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="rounded border border-line bg-white p-4">
+          <h3 className="font-medium">qBittorrent</h3>
+          <div className="mt-4 grid gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={qbittorrent.enabled} onChange={(event) => setQbittorrent({ ...qbittorrent, enabled: event.target.checked })} />
+              Enabled
+            </label>
+            <Input label="Base URL" value={qbittorrent.baseUrl} onChange={(value) => setQbittorrent({ ...qbittorrent, baseUrl: value })} placeholder="https://your-qbit-host" />
+            <Input label="Username" value={qbittorrent.username} onChange={(value) => setQbittorrent({ ...qbittorrent, username: value })} />
+            <Input label={qbittorrent.hasPassword ? "Password (already saved)" : "Password"} type="password" value={qbittorrent.password} onChange={(value) => setQbittorrent({ ...qbittorrent, password: value })} placeholder={qbittorrent.hasPassword ? "Leave blank to keep current" : ""} />
+            {qbittorrent.hasPassword && (
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input type="checkbox" checked={qbittorrent.clearPassword} onChange={(event) => setQbittorrent({ ...qbittorrent, clearPassword: event.target.checked })} />
+                Clear saved password
+              </label>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded border border-line bg-white p-4">
+          <h3 className="font-medium">SFTP seedbox</h3>
+          <div className="mt-4 grid gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={sftpSeedbox.enabled} onChange={(event) => setSftpSeedbox({ ...sftpSeedbox, enabled: event.target.checked })} />
+              Enabled
+            </label>
+            <Input label="Host" value={sftpSeedbox.host} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, host: value })} placeholder="your-ultra-sftp-host" />
+            <Input label="Port" value={String(sftpSeedbox.port)} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, port: Number(value) || 22 })} />
+            <Input label="Username" value={sftpSeedbox.username} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, username: value })} />
+            <Input label={sftpSeedbox.hasPassword ? "Password (already saved)" : "Password"} type="password" value={sftpSeedbox.password} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, password: value })} placeholder={sftpSeedbox.hasPassword ? "Leave blank to keep current" : ""} />
+            <Input label="Private key path" value={sftpSeedbox.privateKeyPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, privateKeyPath: value })} placeholder="/keys/id_rsa" />
+            <Input label={sftpSeedbox.hasPrivateKeyPassphrase ? "Key passphrase (already saved)" : "Key passphrase"} type="password" value={sftpSeedbox.privateKeyPassphrase} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, privateKeyPassphrase: value })} />
+            <Input label="Remote root path" value={sftpSeedbox.remoteRootPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, remoteRootPath: value })} placeholder="/home/user/files" />
+            <div className="grid gap-2 text-sm text-slate-600">
+              {sftpSeedbox.hasPassword && (
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={sftpSeedbox.clearPassword} onChange={(event) => setSftpSeedbox({ ...sftpSeedbox, clearPassword: event.target.checked })} />
+                  Clear saved password
+                </label>
+              )}
+              {sftpSeedbox.hasPrivateKeyPassphrase && (
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={sftpSeedbox.clearPrivateKeyPassphrase} onChange={(event) => setSftpSeedbox({ ...sftpSeedbox, clearPrivateKeyPassphrase: event.target.checked })} />
+                  Clear saved key passphrase
+                </label>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded border border-line bg-white p-4">
+        <h3 className="font-medium">Auto download</h3>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={autoDownload.enabled} onChange={(event) => setAutoDownload({ ...autoDownload, enabled: event.target.checked })} />
+            Enabled
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={autoDownload.overwriteExisting} onChange={(event) => setAutoDownload({ ...autoDownload, overwriteExisting: event.target.checked })} />
+            Overwrite existing files
+          </label>
+          <Input label="Local import path" value={autoDownload.localImportPath} onChange={(value) => setAutoDownload({ ...autoDownload, localImportPath: value })} placeholder="/plex/import" />
+          <Input label="Allowed extensions" value={autoDownload.allowedExtensionsText} onChange={(value) => setAutoDownload({ ...autoDownload, allowedExtensionsText: value })} placeholder=".mkv, .mp4, .srt" />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button onClick={saveAll} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save connection settings</button>
+        <p className="text-sm text-slate-600">{message}</p>
+      </div>
+    </div>
+  );
+}
+
+function Input({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string }) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-slate-600">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="rounded border border-line px-3 py-2 text-ink outline-none focus:border-accent"
+      />
+    </label>
   );
 }
 

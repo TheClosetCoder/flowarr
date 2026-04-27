@@ -4,22 +4,22 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Flowarr.Core.Enums;
 using Flowarr.Core.Integrations;
-using Flowarr.Infrastructure.Options;
+using Flowarr.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Flowarr.Infrastructure.Integrations;
 
 public sealed class QBittorrentDownloadClient(
-    IOptions<IntegrationOptions> options,
+    IConnectionSettingsService connectionSettingsService,
+    MockDownloadClient mockDownloadClient,
     ILogger<QBittorrentDownloadClient> logger) : IDownloadClient
 {
     public async Task<IReadOnlyCollection<DownloadSnapshot>> GetDownloadsAsync(CancellationToken cancellationToken = default)
     {
-        var settings = options.Value.QBittorrent;
-        if (string.IsNullOrWhiteSpace(settings.BaseUrl))
+        var settings = await connectionSettingsService.GetQBittorrentAsync(cancellationToken);
+        if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.BaseUrl))
         {
-            return [];
+            return await mockDownloadClient.GetDownloadsAsync(cancellationToken);
         }
 
         var cookies = new CookieContainer();
@@ -33,7 +33,7 @@ public sealed class QBittorrentDownloadClient(
         {
             var loginContent = new FormUrlEncodedContent([
                 new KeyValuePair<string, string>("username", settings.Username),
-                new KeyValuePair<string, string>("password", settings.Password ?? string.Empty)
+                new KeyValuePair<string, string>("password", settings.Password)
             ]);
 
             var loginResponse = await httpClient.PostAsync("api/v2/auth/login", loginContent, cancellationToken);

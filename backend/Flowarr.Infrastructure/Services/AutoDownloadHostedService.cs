@@ -2,18 +2,15 @@ using Flowarr.Core.Entities;
 using Flowarr.Core.Enums;
 using Flowarr.Core.Integrations;
 using Flowarr.Infrastructure.Data;
-using Flowarr.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Flowarr.Infrastructure.Services;
 
 public sealed class AutoDownloadHostedService(
     IServiceScopeFactory scopeFactory,
-    IOptions<IntegrationOptions> options,
     ILogger<AutoDownloadHostedService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -28,18 +25,20 @@ public sealed class AutoDownloadHostedService(
 
     private async Task RunOnceAsync(CancellationToken cancellationToken)
     {
-        if (!options.Value.AutoDownload.Enabled)
-        {
-            return;
-        }
-
         try
         {
             using var scope = scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<FlowarrDbContext>();
             var transferClient = scope.ServiceProvider.GetRequiredService<IRemoteFileTransferClient>();
+            var connectionSettings = scope.ServiceProvider.GetRequiredService<IConnectionSettingsService>();
+            var autoDownload = await connectionSettings.GetAutoDownloadAsync(cancellationToken);
 
-            if (!transferClient.IsConfigured)
+            if (!autoDownload.Enabled)
+            {
+                return;
+            }
+
+            if (!await transferClient.IsConfiguredAsync(cancellationToken))
             {
                 logger.LogInformation("Auto-download is enabled, but SFTP seedbox settings are incomplete.");
                 return;
@@ -65,7 +64,7 @@ public sealed class AutoDownloadHostedService(
                     continue;
                 }
 
-                await DownloadAsync(dbContext, transferClient, download, cancellationToken);
+                await DownloadAsync(dbContext, transferClient, autoDownload, download, cancellationToken);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -80,6 +79,7 @@ public sealed class AutoDownloadHostedService(
     private async Task DownloadAsync(
         FlowarrDbContext dbContext,
         IRemoteFileTransferClient transferClient,
+        AutoDownloadConnectionSettings autoDownload,
         Download download,
         CancellationToken cancellationToken)
     {
@@ -88,7 +88,7 @@ public sealed class AutoDownloadHostedService(
             DownloadId = download.Id,
             Provider = "SFTP",
             RemotePath = download.RemotePath!,
-            LocalPath = options.Value.AutoDownload.LocalImportPath,
+            LocalPath = autoDownload.LocalImportPath,
             Status = TransferStatus.Running,
             StartedAt = DateTimeOffset.UtcNow
         };
@@ -98,7 +98,7 @@ public sealed class AutoDownloadHostedService(
 
         try
         {
-            var result = await transferClient.DownloadAsync(download.RemotePath!, options.Value.AutoDownload.LocalImportPath, cancellationToken);
+            var result = await transferClient.DownloadAsync(download.RemotePath!, autoDownload.LocalImportPath, cancellationToken);
             transfer.BytesTransferred = result.BytesTransferred;
             transfer.LocalPath = result.LocalPath;
             transfer.Status = result.Skipped ? TransferStatus.Skipped : TransferStatus.Completed;

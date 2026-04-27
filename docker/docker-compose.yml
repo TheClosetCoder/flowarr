@@ -39,6 +39,7 @@ services:
       Flowarr__SftpSeedbox__Password: ${FLOWARR_SFTP_PASSWORD:-}
       Flowarr__SftpSeedbox__PrivateKeyPath: ${FLOWARR_SFTP_PRIVATE_KEY_PATH:-}
       Flowarr__SftpSeedbox__RemoteRootPath: ${FLOWARR_SFTP_REMOTE_ROOT_PATH:-}
+      Flowarr__Security__DataProtectionKeysPath: /var/lib/flowarr/keys
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,6 +48,7 @@ services:
       - ${FLOWARR_PLEX_IMPORT_PATH:-./data/plex-import}:/plex/import
       - ${FLOWARR_SEEDBOX_MOUNT_PATH:-./data/seedbox}:/seedbox:ro
       - ${FLOWARR_SFTP_PRIVATE_KEY_HOST_PATH:-./data/keys}:/keys:ro
+      - flowarr-keys:/var/lib/flowarr/keys
     ports:
       - "8080:8080"
 
@@ -61,3 +63,4 @@ services:
 
 volumes:
   flowarr-postgres:
+  flowarr-keys:

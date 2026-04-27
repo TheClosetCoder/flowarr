@@ -1,29 +1,37 @@
 using Flowarr.Core.Integrations;
 using Flowarr.Infrastructure.Options;
-using Microsoft.Extensions.Options;
+using Flowarr.Infrastructure.Services;
 using Renci.SshNet;
 using Renci.SshNet.Sftp;
 
 namespace Flowarr.Infrastructure.Integrations;
 
-public sealed class SftpSeedboxTransferClient(IOptions<IntegrationOptions> options) : IRemoteFileTransferClient
+public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connectionSettingsService) : IRemoteFileTransferClient
 {
-    private readonly IntegrationOptions _options = options.Value;
+    private SftpSeedboxConnectionSettings? _seedbox;
+    private AutoDownloadConnectionSettings? _autoDownload;
 
-    public bool IsConfigured =>
-        !string.IsNullOrWhiteSpace(_options.SftpSeedbox.Host) &&
-        !string.IsNullOrWhiteSpace(_options.SftpSeedbox.Username) &&
-        (!string.IsNullOrWhiteSpace(_options.SftpSeedbox.Password) ||
-         !string.IsNullOrWhiteSpace(_options.SftpSeedbox.PrivateKeyPath));
-
-    public Task<RemoteTransferResult> DownloadAsync(string remotePath, string localRootPath, CancellationToken cancellationToken = default)
+    public async Task<bool> IsConfiguredAsync(CancellationToken cancellationToken = default)
     {
-        if (!IsConfigured)
+        var seedbox = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
+        return seedbox.Enabled &&
+               !string.IsNullOrWhiteSpace(seedbox.Host) &&
+               !string.IsNullOrWhiteSpace(seedbox.Username) &&
+               (!string.IsNullOrWhiteSpace(seedbox.Password) ||
+                !string.IsNullOrWhiteSpace(seedbox.PrivateKeyPath));
+    }
+
+    public async Task<RemoteTransferResult> DownloadAsync(string remotePath, string localRootPath, CancellationToken cancellationToken = default)
+    {
+        _seedbox = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
+        _autoDownload = await connectionSettingsService.GetAutoDownloadAsync(cancellationToken);
+
+        if (!await IsConfiguredAsync(cancellationToken))
         {
-            return Task.FromResult(new RemoteTransferResult(remotePath, localRootPath, 0, true, "SFTP seedbox is not configured."));
+            return new RemoteTransferResult(remotePath, localRootPath, 0, true, "SFTP seedbox is not configured.");
         }
 
-        return Task.Run(() =>
+        return await Task.Run(() =>
         {
             using var client = CreateClient();
             client.Connect();
@@ -47,12 +55,12 @@ public sealed class SftpSeedboxTransferClient(IOptions<IntegrationOptions> optio
 
     private SftpClient CreateClient()
     {
-        var seedbox = _options.SftpSeedbox;
+        var seedbox = _seedbox ?? throw new InvalidOperationException("SFTP seedbox settings were not loaded.");
         if (!string.IsNullOrWhiteSpace(seedbox.PrivateKeyPath))
         {
-            var keyFile = string.IsNullOrWhiteSpace(seedbox.Password)
+            var keyFile = string.IsNullOrWhiteSpace(seedbox.PrivateKeyPassphrase)
                 ? new PrivateKeyFile(seedbox.PrivateKeyPath)
-                : new PrivateKeyFile(seedbox.PrivateKeyPath, seedbox.Password);
+                : new PrivateKeyFile(seedbox.PrivateKeyPath, seedbox.PrivateKeyPassphrase);
 
             return new SftpClient(seedbox.Host, seedbox.Port, seedbox.Username, keyFile);
         }
@@ -62,7 +70,7 @@ public sealed class SftpSeedboxTransferClient(IOptions<IntegrationOptions> optio
 
     private string NormalizeRemotePath(string remotePath)
     {
-        var root = _options.SftpSeedbox.RemoteRootPath.TrimEnd('/');
+        var root = (_seedbox?.RemoteRootPath ?? string.Empty).TrimEnd('/');
         if (string.IsNullOrWhiteSpace(root) || remotePath.StartsWith("/", StringComparison.Ordinal))
         {
             return remotePath;
@@ -96,15 +104,16 @@ public sealed class SftpSeedboxTransferClient(IOptions<IntegrationOptions> optio
     private long DownloadFile(SftpClient client, string remotePath, string localDirectory, CancellationToken cancellationToken)
     {
         var extension = Path.GetExtension(remotePath);
-        if (_options.AutoDownload.AllowedExtensions.Length > 0 &&
-            !_options.AutoDownload.AllowedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+        var autoDownload = _autoDownload ?? throw new InvalidOperationException("Auto-download settings were not loaded.");
+        if (autoDownload.AllowedExtensions.Length > 0 &&
+            !autoDownload.AllowedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
         {
             return 0;
         }
 
         Directory.CreateDirectory(localDirectory);
         var localPath = Path.Combine(localDirectory, Path.GetFileName(remotePath));
-        if (File.Exists(localPath) && !_options.AutoDownload.OverwriteExisting)
+        if (File.Exists(localPath) && !autoDownload.OverwriteExisting)
         {
             return 0;
         }
