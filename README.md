@@ -31,8 +31,19 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 From the repository root:
 
 ```bash
+cd docker
+cp .env.example .env
+nano .env
 docker compose -f docker/docker-compose.yml up --build
 ```
+
+Set `FLOWARR_MEDIA_ROOT` in `docker/.env` to your host media folder, for example:
+
+```env
+FLOWARR_MEDIA_ROOT=/mnt/media
+```
+
+Inside Flowarr, use the container paths under `/media`, for example `/media/Movies` or `/media/TV Shows`.
 
 Open:
 

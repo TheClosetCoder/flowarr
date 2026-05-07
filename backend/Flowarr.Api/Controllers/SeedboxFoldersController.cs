@@ -9,7 +9,7 @@ namespace Flowarr.Api.Controllers;
 public sealed class SeedboxFoldersController(IConnectionSettingsService connectionSettingsService) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> Browse([FromQuery] string kind = "Download", [FromQuery] string? path = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Browse([FromQuery] string kind = "Download", [FromQuery] string? rootPath = null, [FromQuery] string? path = null, CancellationToken cancellationToken = default)
     {
         var settings = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
         if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.Host) || string.IsNullOrWhiteSpace(settings.Username))
@@ -20,6 +20,13 @@ public sealed class SeedboxFoldersController(IConnectionSettingsService connecti
         var roots = settings.SeedboxRoots
             .Where(root => root.Enabled && root.Kind.Equals(kind, StringComparison.OrdinalIgnoreCase))
             .ToList();
+        if (!string.IsNullOrWhiteSpace(rootPath))
+        {
+            roots = roots
+                .Where(root => root.Path.TrimEnd('/').Equals(rootPath.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
         if (string.IsNullOrWhiteSpace(path))
         {
             return Ok(new SeedboxFolderListing(string.Empty, null, roots.Select(root => new SeedboxFolderEntry(root.Name, root.Path)).ToList()));

@@ -328,7 +328,7 @@ public sealed class ConnectionSettingsService(
 
         return string.IsNullOrWhiteSpace(fallbackLocalImportPath)
             ? []
-            : [new TransferRuleSettings(true, "Default", string.Empty, fallbackLocalImportPath, "Download")];
+            : [new TransferRuleSettings(true, "Default", string.Empty, fallbackLocalImportPath, "Download", string.Empty)];
     }
 
     private static LocalMediaPathSettings[] GetLocalMediaPaths(IReadOnlyDictionary<string, string?> values, string fallbackLocalPath)
@@ -411,7 +411,8 @@ public sealed record TransferRuleSettings(
     string Name,
     string RemotePathPrefix,
     string LocalPath,
-    string SourceRootKind = "Download");
+    string SourceRootKind = "Download",
+    string SourceRootPath = "");
 
 public sealed record SeedboxRootSettings(
     bool Enabled,

@@ -74,7 +74,7 @@ public sealed class AutoDownloadHostedService(
                 var seedbox = await connectionSettings.GetSftpSeedboxAsync(cancellationToken);
                 if (!IsAllowedSourcePath(seedbox, transferRule, download.RemotePath!))
                 {
-                    logger.LogWarning("Skipping {RemotePath}; it is outside configured {RootKind} seedbox roots.", download.RemotePath, transferRule.SourceRootKind);
+                    logger.LogWarning("Skipping {RemotePath}; it is outside configured seedbox root {RootPath}.", download.RemotePath, GetRuleRootLabel(transferRule));
                     continue;
                 }
 
@@ -156,21 +156,27 @@ public sealed class AutoDownloadHostedService(
     {
         var rules = settings.TransferRules.Length > 0
             ? settings.TransferRules
-            : [new TransferRuleSettings(true, "Default", string.Empty, settings.LocalImportPath, "Download")];
+            : [new TransferRuleSettings(true, "Default", string.Empty, settings.LocalImportPath, "Download", string.Empty)];
 
         return rules
             .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.LocalPath))
-            .OrderByDescending(rule => rule.RemotePathPrefix?.Length ?? 0)
+            .OrderByDescending(rule => GetEffectiveSourcePrefix(rule).Length)
             .FirstOrDefault(rule =>
-                string.IsNullOrWhiteSpace(rule.RemotePathPrefix) ||
-                remotePath.StartsWith(rule.RemotePathPrefix.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
+            {
+                var prefix = GetEffectiveSourcePrefix(rule);
+                return string.IsNullOrWhiteSpace(prefix) ||
+                       remotePath.Equals(prefix, StringComparison.OrdinalIgnoreCase) ||
+                       remotePath.StartsWith(prefix + "/", StringComparison.OrdinalIgnoreCase);
+            });
     }
 
     private static bool IsAllowedSourcePath(SftpSeedboxConnectionSettings seedbox, TransferRuleSettings rule, string remotePath)
     {
-        var kind = string.IsNullOrWhiteSpace(rule.SourceRootKind) ? "Download" : rule.SourceRootKind;
         var roots = seedbox.SeedboxRoots
-            .Where(root => root.Enabled && root.Kind.Equals(kind, StringComparison.OrdinalIgnoreCase))
+            .Where(root => root.Enabled &&
+                           (string.IsNullOrWhiteSpace(rule.SourceRootPath)
+                               ? root.Kind.Equals(rule.SourceRootKind, StringComparison.OrdinalIgnoreCase)
+                               : root.Path.Equals(rule.SourceRootPath, StringComparison.OrdinalIgnoreCase)))
             .Select(root => root.Path.TrimEnd('/'))
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .ToList();
@@ -182,5 +188,29 @@ public sealed class AutoDownloadHostedService(
 
         return roots.Any(root => remotePath.Equals(root, StringComparison.OrdinalIgnoreCase) ||
                                  remotePath.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string GetEffectiveSourcePrefix(TransferRuleSettings rule)
+    {
+        var remotePathPrefix = rule.RemotePathPrefix?.Trim() ?? string.Empty;
+        if (remotePathPrefix.StartsWith("/", StringComparison.Ordinal))
+        {
+            return remotePathPrefix.TrimEnd('/');
+        }
+
+        var sourceRoot = rule.SourceRootPath?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(sourceRoot))
+        {
+            return remotePathPrefix.TrimEnd('/');
+        }
+
+        return string.IsNullOrWhiteSpace(remotePathPrefix)
+            ? sourceRoot.TrimEnd('/')
+            : $"{sourceRoot.TrimEnd('/')}/{remotePathPrefix.TrimStart('/').TrimEnd('/')}";
+    }
+
+    private static string GetRuleRootLabel(TransferRuleSettings rule)
+    {
+        return string.IsNullOrWhiteSpace(rule.SourceRootPath) ? rule.SourceRootKind : rule.SourceRootPath;
     }
 }

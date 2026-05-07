@@ -91,7 +91,7 @@ public sealed class SeedboxStorageScanner(
             .ToList();
         var remotePaths = autoDownload.TransferRules
             .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.RemotePathPrefix))
-            .Select(rule => new { Name = $"Seedbox rule: {rule.Name}", Path = NormalizeRemotePath(GetRootForKind(seedbox, rule.SourceRootKind), rule.RemotePathPrefix) })
+            .Select(rule => new { Name = $"Seedbox rule: {rule.Name}", Path = NormalizeRemotePath(GetRootForRule(seedbox, rule), rule.RemotePathPrefix) })
             .Concat(configuredRoots)
             .Where(item => !string.IsNullOrWhiteSpace(item.Path))
             .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
@@ -143,10 +143,13 @@ public sealed class SeedboxStorageScanner(
         return new SftpClient(seedbox.Host, seedbox.Port, seedbox.Username, seedbox.Password);
     }
 
-    private static string GetRootForKind(SftpSeedboxConnectionSettings seedbox, string sourceRootKind)
+    private static string GetRootForRule(SftpSeedboxConnectionSettings seedbox, TransferRuleSettings rule)
     {
         return seedbox.SeedboxRoots
-            .FirstOrDefault(root => root.Enabled && root.Kind.Equals(sourceRootKind, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(root => root.Enabled &&
+                                    (string.IsNullOrWhiteSpace(rule.SourceRootPath)
+                                        ? root.Kind.Equals(rule.SourceRootKind, StringComparison.OrdinalIgnoreCase)
+                                        : root.Path.Equals(rule.SourceRootPath, StringComparison.OrdinalIgnoreCase)))
             ?.Path ?? seedbox.RemoteRootPath;
     }
 

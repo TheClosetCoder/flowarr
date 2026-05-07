@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, Check, ChevronUp, Download, FolderDown, FolderOpen, HardDrive, LogOut, Plug, Settings, ShieldCheck, Trash2, X } from "lucide-react";
+import { Activity, Check, ChevronUp, Download, FolderDown, FolderOpen, HardDrive, Info, LogOut, Plug, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import "./styles.css";
 
 type DashboardSummary = {
@@ -27,7 +27,7 @@ type ConnectionTestResult = { ok: boolean; message: string };
 type LocalMediaPath = { id?: string; enabled: boolean; name: string; path: string; role: string };
 type SeedboxRoot = { id?: string; enabled: boolean; name: string; kind: "Download" | "Media"; path: string };
 type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
-type TransferRule = { id?: string; enabled: boolean; name: string; remotePathPrefix: string; localPath: string; sourceRootKind: "Download" | "Media" };
+type TransferRule = { id?: string; enabled: boolean; name: string; remotePathPrefix: string; localPath: string; sourceRootKind: "Download" | "Media"; sourceRootPath: string };
 type ArrSettings = { enabled: boolean; baseUrl: string; hasApiKey: boolean };
 type AuthStatus = { setupComplete: boolean; authenticated: boolean };
 type JobRun = { id: string; jobType: string; status: string; startedAt: string; completedAt?: string; errorMessage?: string };
@@ -216,7 +216,7 @@ function normalizeAutoDownload(autoDownload: Partial<ConnectionSettings["autoDow
     overwriteExisting: autoDownload?.overwriteExisting ?? false,
     allowedExtensions: autoDownload?.allowedExtensions ?? [".mkv", ".mp4", ".avi", ".mov", ".m4v", ".srt"],
     localMediaPaths: (autoDownload?.localMediaPaths ?? []).map((path) => ({ ...path, id: path.id ?? createClientId() })),
-    transferRules: (autoDownload?.transferRules ?? []).map((rule) => ({ ...rule, sourceRootKind: rule.sourceRootKind ?? "Download", id: rule.id ?? createClientId() }))
+    transferRules: (autoDownload?.transferRules ?? []).map((rule) => ({ ...rule, sourceRootKind: rule.sourceRootKind ?? "Download", sourceRootPath: rule.sourceRootPath ?? "", id: rule.id ?? createClientId() }))
   };
 }
 
@@ -367,29 +367,12 @@ function Connections({ settings, error, onSaved }: { settings: ConnectionSetting
   return (
     <section className="space-y-4">
       <ConnectionForms settings={settings} onSaved={onSaved} />
-      <PlannedConnections />
-    </section>
-  );
-}
-
-function PlannedConnections() {
-  const integrations = ["Plex", "Jellyfin"];
-  return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {integrations.map((name) => (
-        <div key={name} className="rounded border border-line bg-white p-4">
-          <div className="flex items-center gap-3">
-            <Plug className="text-accent" size={20} />
-            <h3 className="font-medium">{name}</h3>
-          </div>
-          <p className="mt-3 text-sm text-slate-600">Not configured yet.</p>
-        </div>
-      ))}
     </section>
   );
 }
 
 function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; onSaved: () => Promise<void> }) {
+  const [activeTab, setActiveTab] = React.useState("torrent");
   const [qbittorrent, setQbittorrent] = React.useState({ ...settings.qbittorrent, password: "", clearPassword: false });
   const [sftpSeedbox, setSftpSeedbox] = React.useState({ ...settings.sftpSeedbox, seedboxRoots: settings.sftpSeedbox.seedboxRoots.map((root) => ({ ...root, id: root.id ?? createClientId() })), password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
   const [autoDownload, setAutoDownload] = React.useState({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
@@ -402,6 +385,8 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
   const [sonarrTest, setSonarrTest] = React.useState<ConnectionTestResult | null>(null);
   const [testingTorrent, setTestingTorrent] = React.useState(false);
   const [testingSftp, setTestingSftp] = React.useState(false);
+  const enabledSeedboxRoots = sftpSeedbox.seedboxRoots.filter((root) => root.enabled && root.path.trim());
+  const defaultSourceRoot = enabledSeedboxRoots.find((root) => root.kind === "Download") ?? enabledSeedboxRoots[0];
 
   React.useEffect(() => {
     setQbittorrent({ ...settings.qbittorrent, password: "", clearPassword: false });
@@ -505,7 +490,8 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
         name: rule.name || "Rule",
         remotePathPrefix: rule.remotePathPrefix || "",
         localPath: rule.localPath || autoDownload.localImportPath || "/media/import",
-        sourceRootKind: rule.sourceRootKind || "Download"
+        sourceRootKind: rule.sourceRootKind || "Download",
+        sourceRootPath: rule.sourceRootPath || ""
       }))
     });
     await onSaved();
@@ -530,9 +516,24 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-2">
+      <ConnectionTabs
+        activeTab={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          { id: "torrent", label: "Torrent Client" },
+          { id: "sftp", label: "SFTP" },
+          { id: "services", label: "Services" },
+          { id: "plex", label: "Plex" },
+          { id: "jellyfin", label: "Jellyfin" }
+        ]}
+      />
+
+      {activeTab === "torrent" && (
         <div className="rounded border border-line bg-white p-4">
-          <h3 className="font-medium">Torrent client</h3>
+          <CardTitleWithInfo
+            title="Torrent client"
+            description="Your download client, such as Deluge or qBittorrent. Flowarr reads torrent status and remote paths from here."
+          />
           <div className="mt-4 grid gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={qbittorrent.enabled} onChange={(event) => setQbittorrent({ ...qbittorrent, enabled: event.target.checked })} />
@@ -570,9 +571,15 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             {torrentTest && <ConnectionTestStatus result={torrentTest} pending={testingTorrent} />}
           </div>
         </div>
+      )}
 
+      {activeTab === "sftp" && (
+        <>
         <div className="rounded border border-line bg-white p-4">
-          <h3 className="font-medium">SFTP seedbox</h3>
+          <CardTitleWithInfo
+            title="SFTP seedbox"
+            description="SFTP access to your seedbox files. Flowarr uses this for browsing seedbox roots, scanning storage, and downloading completed files."
+          />
           <div className="mt-4 grid gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={sftpSeedbox.enabled} onChange={(event) => setSftpSeedbox({ ...sftpSeedbox, enabled: event.target.checked })} />
@@ -642,13 +649,17 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             {sftpTest && <ConnectionTestStatus result={sftpTest} pending={testingSftp} />}
           </div>
         </div>
-      </div>
+        </>
+      )}
 
+      {activeTab === "services" && (
       <div className="grid gap-4 xl:grid-cols-2">
         <ArrConnectionCard title="Radarr" value={radarr} test={radarrTest} onChange={setRadarr} onSave={() => saveArr("radarr")} onTest={() => testArr("radarr")} />
         <ArrConnectionCard title="Sonarr" value={sonarr} test={sonarrTest} onChange={setSonarr} onSave={() => saveArr("sonarr")} onTest={() => testArr("sonarr")} />
       </div>
+      )}
 
+      {activeTab === "sftp" && (
       <div className="rounded border border-line bg-white p-4">
         <h3 className="font-medium">Auto download</h3>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -665,7 +676,10 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
         </div>
         <div className="mt-5 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h4 className="text-sm font-medium">Local media paths</h4>
+            <SectionTitleWithInfo
+              title="Local media paths"
+              description="Local library folders inside the container, such as /media/Movies or /media/TV Shows. Flowarr scans these as your Plex/Jellyfin media destinations."
+            />
             <button
               onClick={() => setAutoDownload({
                 ...autoDownload,
@@ -700,11 +714,14 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
         </div>
         <div className="mt-5 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h4 className="text-sm font-medium">Download folder rules</h4>
+            <SectionTitleWithInfo
+              title="Download folder rules"
+              description="Rules that map a seedbox source folder to a local media path. Use one rule per flow, for example Movies downloads to /media/Movies and TV downloads to /media/TV Shows."
+            />
             <button
               onClick={() => setAutoDownload({
                 ...autoDownload,
-                transferRules: [...autoDownload.transferRules, { id: createClientId(), enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localMediaPaths[0]?.path || autoDownload.localImportPath || "/media/import", sourceRootKind: "Download" }]
+                transferRules: [...autoDownload.transferRules, { id: createClientId(), enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localMediaPaths[0]?.path || autoDownload.localImportPath || "/media/import", sourceRootKind: defaultSourceRoot?.kind ?? "Download", sourceRootPath: defaultSourceRoot?.path ?? "" }]
               })}
               className="rounded border border-line px-3 py-1 text-sm"
             >
@@ -722,14 +739,19 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
                 Enabled
               </label>
               <Input label="Name" value={rule.name} onChange={(value) => updateTransferRule(index, { name: value })} placeholder="Movies" />
-              <label className="grid gap-1 text-sm">
-                <span className="text-slate-600">Source root</span>
-                <select value={rule.sourceRootKind} onChange={(event) => updateTransferRule(index, { sourceRootKind: event.target.value as "Download" | "Media" })} className="rounded border border-line px-3 py-2">
-                  <option value="Download">Download</option>
-                  <option value="Media">Media</option>
-                </select>
-              </label>
-              <Input label="Remote folder" value={rule.remotePathPrefix} onChange={(value) => updateTransferRule(index, { remotePathPrefix: value })} placeholder="/downloads/movies" />
+              <SeedboxRootSelect
+                roots={enabledSeedboxRoots}
+                rule={rule}
+                onChange={(root) => updateTransferRule(index, { sourceRootKind: root?.kind ?? "Download", sourceRootPath: root?.path ?? "" })}
+              />
+              <SeedboxPathInput
+                label="Remote folder"
+                value={rule.remotePathPrefix}
+                sourceRootKind={rule.sourceRootKind}
+                sourceRootPath={rule.sourceRootPath}
+                onChange={(value) => updateTransferRule(index, { remotePathPrefix: value })}
+                placeholder={rule.sourceRootPath ? "optional subfolder" : "/downloads/movies"}
+              />
               <LocalPathInput label="Local destination" value={rule.localPath} onChange={(value) => updateTransferRule(index, { localPath: value })} placeholder="/media/Movies" />
               <button
                 onClick={() => setAutoDownload({ ...autoDownload, transferRules: autoDownload.transferRules.filter((_, ruleIndex) => ruleIndex !== index) })}
@@ -742,6 +764,10 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
         </div>
         <button onClick={saveAutoDownload} className="mt-4 rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save auto-download</button>
       </div>
+      )}
+
+      {activeTab === "plex" && <PlannedServicePanel name="Plex" />}
+      {activeTab === "jellyfin" && <PlannedServicePanel name="Jellyfin" />}
 
       <div className="flex items-center gap-3">
         <p className="text-sm text-slate-600">{message}</p>
@@ -829,6 +855,37 @@ function ConnectionTestStatus({ result, pending }: { result: ConnectionTestResul
   );
 }
 
+function ConnectionTabs({ activeTab, tabs, onChange }: { activeTab: string; tabs: { id: string; label: string }[]; onChange: (tab: string) => void }) {
+  return (
+    <div className="overflow-x-auto rounded border border-line bg-white p-1">
+      <div className="flex min-w-max gap-1">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={`rounded px-4 py-2 text-sm font-medium ${activeTab === tab.id ? "bg-accent text-white" : "text-slate-700 hover:bg-panel"}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PlannedServicePanel({ name }: { name: string }) {
+  return (
+    <div className="rounded border border-line bg-white p-4">
+      <CardTitleWithInfo
+        title={name}
+        description={`${name} integration is planned. Flowarr will use it later for library awareness and playback-server status.`}
+      />
+      <p className="mt-3 text-sm text-slate-600">Not configured yet.</p>
+    </div>
+  );
+}
+
 function Input({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string }) {
   return (
     <label className="grid gap-1 text-sm">
@@ -841,6 +898,106 @@ function Input({ label, value, onChange, placeholder, type = "text" }: { label: 
         className="rounded border border-line px-3 py-2 text-ink outline-none focus:border-accent"
       />
     </label>
+  );
+}
+
+function SectionTitleWithInfo({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <h4 className="text-sm font-medium">{title}</h4>
+      <span className="group relative inline-flex">
+        <Info size={15} className="text-slate-500" />
+        <span className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-72 -translate-x-1/2 rounded border border-line bg-white px-3 py-2 text-xs font-normal text-slate-700 shadow-lg group-hover:block">
+          {description}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function CardTitleWithInfo({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <h3 className="font-medium">{title}</h3>
+      <span className="group relative inline-flex">
+        <Info size={15} className="text-slate-500" />
+        <span className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-72 -translate-x-1/2 rounded border border-line bg-white px-3 py-2 text-xs font-normal text-slate-700 shadow-lg group-hover:block">
+          {description}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function SeedboxRootSelect({ roots, rule, onChange }: { roots: SeedboxRoot[]; rule: TransferRule; onChange: (root: SeedboxRoot | null) => void }) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-slate-600">Seedbox source root</span>
+      <select
+        value={rule.sourceRootPath}
+        onChange={(event) => onChange(roots.find((root) => root.path === event.target.value) ?? null)}
+        className="rounded border border-line px-3 py-2"
+      >
+        <option value="">Any {rule.sourceRootKind || "Download"} root</option>
+        {roots.map((root) => (
+          <option key={`${root.kind}-${root.path}`} value={root.path}>
+            {root.name} ({root.kind}) - {root.path}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SeedboxPathInput({
+  label,
+  value,
+  sourceRootKind,
+  sourceRootPath,
+  onChange,
+  placeholder
+}: {
+  label: string;
+  value: string;
+  sourceRootKind: "Download" | "Media";
+  sourceRootPath: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <div className="grid gap-1 text-sm">
+      <span className="text-slate-600">{label}</span>
+      <div className="flex gap-2">
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="min-w-0 flex-1 rounded border border-line px-3 py-2 text-ink outline-none focus:border-accent"
+        />
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title={`Browse ${label}`}
+          className="grid h-10 w-10 flex-none place-items-center rounded border border-line bg-white text-slate-700 hover:bg-panel"
+        >
+          <FolderOpen size={18} />
+        </button>
+      </div>
+      {open && (
+        <SeedboxFolderBrowser
+          initialPath={toAbsoluteSeedboxPath(sourceRootPath, value)}
+          sourceRootKind={sourceRootKind}
+          sourceRootPath={sourceRootPath}
+          onClose={() => setOpen(false)}
+          onSelect={(path) => {
+            onChange(toRuleRemotePath(sourceRootPath, path));
+            setOpen(false);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -963,6 +1120,112 @@ function LocalFolderBrowser({ initialPath, onSelect, onClose }: { initialPath: s
       </div>
     </div>
   );
+}
+
+function SeedboxFolderBrowser({
+  initialPath,
+  sourceRootKind,
+  sourceRootPath,
+  onSelect,
+  onClose
+}: {
+  initialPath: string;
+  sourceRootKind: "Download" | "Media";
+  sourceRootPath: string;
+  onSelect: (path: string) => void;
+  onClose: () => void;
+}) {
+  const [listing, setListing] = React.useState<LocalFolderListing | null>(null);
+  const [currentPath, setCurrentPath] = React.useState(initialPath);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  const loadPath = React.useCallback(async (path: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const query = new URLSearchParams({ kind: sourceRootKind });
+      if (sourceRootPath) query.set("rootPath", sourceRootPath);
+      if (path) query.set("path", path);
+      const nextListing = await fetchJson<LocalFolderListing>(`/api/seedbox-folders?${query.toString()}`);
+      setListing(nextListing);
+      setCurrentPath(nextListing.currentPath || "");
+    } catch (err) {
+      setListing(null);
+      setError(err instanceof Error ? err.message : "Unable to browse seedbox.");
+    } finally {
+      setLoading(false);
+    }
+  }, [sourceRootKind, sourceRootPath]);
+
+  React.useEffect(() => {
+    void loadPath(initialPath);
+  }, [initialPath, loadPath]);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-4 py-6">
+      <div className="w-full max-w-2xl overflow-hidden rounded border border-line bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <div className="min-w-0">
+            <h3 className="font-medium">Browse seedbox folders</h3>
+            <p className="truncate text-xs text-slate-500">{listing?.currentPath || sourceRootPath || `${sourceRootKind} roots`}</p>
+          </div>
+          <button type="button" onClick={onClose} title="Close" className="grid h-9 w-9 place-items-center rounded border border-line">
+            <X size={17} />
+          </button>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto p-4">
+          {error && <div className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-warn">{error}</div>}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => void loadPath("")} className="rounded border border-line px-3 py-2 text-sm">Roots</button>
+            {listing?.parentPath && (
+              <button type="button" onClick={() => void loadPath(listing.parentPath!)} className="inline-flex items-center gap-2 rounded border border-line px-3 py-2 text-sm">
+                <ChevronUp size={16} />
+                Up
+              </button>
+            )}
+            {currentPath && (
+              <button type="button" onClick={() => onSelect(currentPath)} className="inline-flex items-center gap-2 rounded bg-accent px-3 py-2 text-sm font-medium text-white">
+                <Check size={16} />
+                Select
+              </button>
+            )}
+          </div>
+          {loading ? (
+            <p className="text-sm text-slate-600">Loading folders...</p>
+          ) : (
+            <div className="space-y-2">
+              {(listing?.entries ?? []).length ? (listing?.entries ?? []).map((entry) => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  onClick={() => void loadPath(entry.path)}
+                  className="flex w-full items-center gap-3 rounded border border-line px-3 py-2 text-left text-sm hover:bg-panel"
+                >
+                  <FolderOpen size={17} className="text-accent" />
+                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                  <span className="hidden max-w-xs truncate text-xs text-slate-500 sm:block">{entry.path}</span>
+                </button>
+              )) : (
+                <p className="rounded bg-panel px-3 py-2 text-sm text-slate-600">No folders found here.</p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function toAbsoluteSeedboxPath(rootPath: string, value: string) {
+  if (!rootPath || value.startsWith("/")) return value || rootPath;
+  return value ? `${rootPath.replace(/\/$/, "")}/${value.replace(/^\//, "")}` : rootPath;
+}
+
+function toRuleRemotePath(rootPath: string, selectedPath: string) {
+  const root = rootPath.replace(/\/$/, "");
+  if (!root || !selectedPath.startsWith(root)) return selectedPath;
+  return selectedPath.slice(root.length).replace(/^\//, "");
 }
 
 function Storage({ storage, setStorage }: { storage: StorageLocation[]; setStorage: (items: StorageLocation[]) => void }) {
