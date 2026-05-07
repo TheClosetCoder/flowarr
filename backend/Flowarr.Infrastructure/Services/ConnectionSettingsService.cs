@@ -14,9 +14,13 @@ public interface IConnectionSettingsService
     Task<QBittorrentConnectionSettings> GetQBittorrentAsync(CancellationToken cancellationToken = default);
     Task<SftpSeedboxConnectionSettings> GetSftpSeedboxAsync(CancellationToken cancellationToken = default);
     Task<AutoDownloadConnectionSettings> GetAutoDownloadAsync(CancellationToken cancellationToken = default);
+    Task<ArrConnectionSettings> GetRadarrAsync(CancellationToken cancellationToken = default);
+    Task<ArrConnectionSettings> GetSonarrAsync(CancellationToken cancellationToken = default);
     Task SaveQBittorrentAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken = default);
     Task SaveSftpSeedboxAsync(SaveSftpSeedboxConnectionRequest request, CancellationToken cancellationToken = default);
     Task SaveAutoDownloadAsync(SaveAutoDownloadConnectionRequest request, CancellationToken cancellationToken = default);
+    Task SaveRadarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default);
+    Task SaveSonarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed class ConnectionSettingsService(
@@ -32,7 +36,9 @@ public sealed class ConnectionSettingsService(
         var qbittorrent = await GetQBittorrentAsync(cancellationToken);
         var sftpSeedbox = await GetSftpSeedboxAsync(cancellationToken);
         var autoDownload = await GetAutoDownloadAsync(cancellationToken);
-        return new ConnectionSettingsSnapshot(qbittorrent, sftpSeedbox, autoDownload);
+        var radarr = await GetRadarrAsync(cancellationToken);
+        var sonarr = await GetSonarrAsync(cancellationToken);
+        return new ConnectionSettingsSnapshot(qbittorrent, sftpSeedbox, autoDownload, radarr, sonarr);
     }
 
     public async Task<QBittorrentConnectionSettings> GetQBittorrentAsync(CancellationToken cancellationToken = default)
@@ -67,6 +73,7 @@ public sealed class ConnectionSettingsService(
             Get(settings, "privateKeyPath", options.Value.SftpSeedbox.PrivateKeyPath),
             Get(secrets, "privateKeyPassphrase", string.Empty),
             Get(settings, "remoteRootPath", options.Value.SftpSeedbox.RemoteRootPath),
+            GetSeedboxRoots(settings),
             !string.IsNullOrWhiteSpace(Get(secrets, "password", options.Value.SftpSeedbox.Password)),
             !string.IsNullOrWhiteSpace(Get(secrets, "privateKeyPassphrase", string.Empty)));
     }
@@ -82,6 +89,16 @@ public sealed class ConnectionSettingsService(
             GetStringArray(settings, "allowedExtensions", options.Value.AutoDownload.AllowedExtensions),
             GetLocalMediaPaths(settings, options.Value.Storage.LocalPath),
             GetTransferRules(settings, options.Value.AutoDownload.LocalImportPath));
+    }
+
+    public Task<ArrConnectionSettings> GetRadarrAsync(CancellationToken cancellationToken = default)
+    {
+        return GetArrAsync("radarr", "Radarr", options.Value.Radarr.BaseUrl, options.Value.Radarr.ApiKey, cancellationToken);
+    }
+
+    public Task<ArrConnectionSettings> GetSonarrAsync(CancellationToken cancellationToken = default)
+    {
+        return GetArrAsync("sonarr", "Sonarr", options.Value.Sonarr.BaseUrl, options.Value.Sonarr.ApiKey, cancellationToken);
     }
 
     public async Task SaveQBittorrentAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken = default)
@@ -143,7 +160,8 @@ public sealed class ConnectionSettingsService(
                 ["port"] = request.Port.ToString(),
                 ["username"] = request.Username ?? string.Empty,
                 ["privateKeyPath"] = request.PrivateKeyPath ?? string.Empty,
-                ["remoteRootPath"] = request.RemoteRootPath ?? string.Empty
+                ["remoteRootPath"] = request.RemoteRootPath ?? string.Empty,
+                ["seedboxRoots"] = JsonSerializer.Serialize(request.SeedboxRoots ?? [], JsonOptions)
             },
             secrets,
             cancellationToken);
@@ -165,6 +183,61 @@ public sealed class ConnectionSettingsService(
                 ["transferRules"] = JsonSerializer.Serialize(request.TransferRules ?? [], JsonOptions)
             },
             [],
+            cancellationToken);
+    }
+
+    public Task SaveRadarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
+    {
+        return SaveArrAsync("radarr", "Radarr", request, cancellationToken);
+    }
+
+    public Task SaveSonarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
+    {
+        return SaveArrAsync("sonarr", "Sonarr", request, cancellationToken);
+    }
+
+    private async Task<ArrConnectionSettings> GetArrAsync(
+        string key,
+        string displayName,
+        string? fallbackBaseUrl,
+        string? fallbackApiKey,
+        CancellationToken cancellationToken)
+    {
+        var saved = await GetConnectionAsync(key, cancellationToken);
+        var settings = ReadSettings(saved);
+        var secrets = ReadSecrets(saved);
+        var configured = saved?.Enabled ?? !string.IsNullOrWhiteSpace(fallbackBaseUrl);
+        var apiKey = Get(secrets, "apiKey", fallbackApiKey);
+        return new ArrConnectionSettings(
+            configured,
+            displayName,
+            Get(settings, "baseUrl", fallbackBaseUrl),
+            !string.IsNullOrWhiteSpace(apiKey),
+            apiKey);
+    }
+
+    private async Task SaveArrAsync(string key, string displayName, SaveArrConnectionRequest request, CancellationToken cancellationToken)
+    {
+        var existing = await GetConnectionAsync(key, cancellationToken);
+        var secrets = ReadSecrets(existing);
+        if (!string.IsNullOrWhiteSpace(request.ApiKey))
+        {
+            secrets["apiKey"] = request.ApiKey;
+        }
+        else if (request.ClearApiKey)
+        {
+            secrets.Remove("apiKey");
+        }
+
+        await SaveConnectionAsync(
+            key,
+            displayName,
+            request.Enabled,
+            new Dictionary<string, string?>
+            {
+                ["baseUrl"] = request.BaseUrl ?? string.Empty
+            },
+            secrets,
             cancellationToken);
     }
 
@@ -255,7 +328,7 @@ public sealed class ConnectionSettingsService(
 
         return string.IsNullOrWhiteSpace(fallbackLocalImportPath)
             ? []
-            : [new TransferRuleSettings(true, "Default", string.Empty, fallbackLocalImportPath)];
+            : [new TransferRuleSettings(true, "Default", string.Empty, fallbackLocalImportPath, "Download")];
     }
 
     private static LocalMediaPathSettings[] GetLocalMediaPaths(IReadOnlyDictionary<string, string?> values, string fallbackLocalPath)
@@ -269,12 +342,27 @@ public sealed class ConnectionSettingsService(
             ? []
             : [new LocalMediaPathSettings(true, "Media", fallbackLocalPath, "Mixed")];
     }
+
+    private static SeedboxRootSettings[] GetSeedboxRoots(IReadOnlyDictionary<string, string?> values)
+    {
+        if (values.TryGetValue("seedboxRoots", out var value) && !string.IsNullOrWhiteSpace(value))
+        {
+            return JsonSerializer.Deserialize<SeedboxRootSettings[]>(value, JsonOptions) ?? [];
+        }
+
+        var legacyRoot = Get(values, "remoteRootPath", string.Empty);
+        return string.IsNullOrWhiteSpace(legacyRoot)
+            ? []
+            : [new SeedboxRootSettings(true, "Media", "Media", legacyRoot)];
+    }
 }
 
 public sealed record ConnectionSettingsSnapshot(
     QBittorrentConnectionSettings QBittorrent,
     SftpSeedboxConnectionSettings SftpSeedbox,
-    AutoDownloadConnectionSettings AutoDownload);
+    AutoDownloadConnectionSettings AutoDownload,
+    ArrConnectionSettings Radarr,
+    ArrConnectionSettings Sonarr);
 
 public sealed record QBittorrentConnectionSettings(
     bool Enabled,
@@ -293,8 +381,16 @@ public sealed record SftpSeedboxConnectionSettings(
     string PrivateKeyPath,
     string PrivateKeyPassphrase,
     string RemoteRootPath,
+    SeedboxRootSettings[] SeedboxRoots,
     bool HasPassword,
     bool HasPrivateKeyPassphrase);
+
+public sealed record ArrConnectionSettings(
+    bool Enabled,
+    string DisplayName,
+    string BaseUrl,
+    bool HasApiKey,
+    string ApiKey);
 
 public sealed record AutoDownloadConnectionSettings(
     bool Enabled,
@@ -314,7 +410,14 @@ public sealed record TransferRuleSettings(
     bool Enabled,
     string Name,
     string RemotePathPrefix,
-    string LocalPath);
+    string LocalPath,
+    string SourceRootKind = "Download");
+
+public sealed record SeedboxRootSettings(
+    bool Enabled,
+    string Name,
+    string Kind,
+    string Path);
 
 public sealed record SaveQBittorrentConnectionRequest(
     bool Enabled,
@@ -334,7 +437,8 @@ public sealed record SaveSftpSeedboxConnectionRequest(
     string? PrivateKeyPath,
     string? PrivateKeyPassphrase,
     bool ClearPrivateKeyPassphrase,
-    string? RemoteRootPath);
+    string? RemoteRootPath,
+    SeedboxRootSettings[]? SeedboxRoots);
 
 public sealed record SaveAutoDownloadConnectionRequest(
     bool Enabled,
@@ -343,3 +447,9 @@ public sealed record SaveAutoDownloadConnectionRequest(
     string[]? AllowedExtensions,
     LocalMediaPathSettings[]? LocalMediaPaths,
     TransferRuleSettings[]? TransferRules);
+
+public sealed record SaveArrConnectionRequest(
+    bool Enabled,
+    string? BaseUrl,
+    string? ApiKey,
+    bool ClearApiKey);

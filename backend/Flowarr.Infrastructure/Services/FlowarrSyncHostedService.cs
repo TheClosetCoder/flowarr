@@ -29,57 +29,18 @@ public sealed class FlowarrSyncHostedService(
         {
             using var scope = scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<FlowarrDbContext>();
-            await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-            await EnsureCompatibilityTablesAsync(dbContext, cancellationToken);
-
-            await LegacyMockDataCleaner.RemoveAsync(dbContext, cancellationToken);
+            var jobRuns = scope.ServiceProvider.GetRequiredService<IJobRunService>();
+            var run = await jobRuns.StartAsync("sync.all", cancellationToken);
             await SyncDownloadsAsync(scope.ServiceProvider, dbContext, cancellationToken);
             await SyncMediaAsync(scope.ServiceProvider, dbContext, cancellationToken);
             await SyncStorageAsync(scope.ServiceProvider, dbContext, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            await jobRuns.CompleteAsync(run, cancellationToken);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Flowarr sync failed");
         }
-    }
-
-    private static async Task EnsureCompatibilityTablesAsync(FlowarrDbContext dbContext, CancellationToken cancellationToken)
-    {
-        await dbContext.Database.ExecuteSqlRawAsync(
-            """
-            CREATE TABLE IF NOT EXISTS "IntegrationConnections" (
-                "Id" uuid NOT NULL,
-                "Key" text NOT NULL,
-                "DisplayName" text NOT NULL,
-                "Enabled" boolean NOT NULL,
-                "SettingsJson" text NOT NULL,
-                "SecretsJson" text NOT NULL,
-                "CreatedAt" timestamp with time zone NOT NULL,
-                "UpdatedAt" timestamp with time zone NOT NULL,
-                CONSTRAINT "PK_IntegrationConnections" PRIMARY KEY ("Id")
-            );
-            """,
-            cancellationToken);
-
-        await dbContext.Database.ExecuteSqlRawAsync(
-            """
-            CREATE TABLE IF NOT EXISTS "RemoteTransfers" (
-                "Id" uuid NOT NULL,
-                "DownloadId" uuid NULL,
-                "Provider" text NOT NULL,
-                "RemotePath" text NOT NULL,
-                "LocalPath" text NOT NULL,
-                "BytesTransferred" bigint NOT NULL,
-                "Status" integer NOT NULL,
-                "Message" text NULL,
-                "CreatedAt" timestamp with time zone NOT NULL,
-                "StartedAt" timestamp with time zone NULL,
-                "CompletedAt" timestamp with time zone NULL,
-                CONSTRAINT "PK_RemoteTransfers" PRIMARY KEY ("Id")
-            );
-            """,
-            cancellationToken);
     }
 
     private static async Task SyncDownloadsAsync(IServiceProvider services, FlowarrDbContext dbContext, CancellationToken cancellationToken)

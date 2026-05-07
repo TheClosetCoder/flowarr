@@ -1,7 +1,6 @@
 using Flowarr.Core.Entities;
 using Flowarr.Core.Integrations;
 using Flowarr.Infrastructure.Data;
-using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,8 +16,6 @@ public sealed class DownloadsController(
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {
-        await LegacyMockDataCleaner.RemoveAsync(dbContext, cancellationToken);
-
         try
         {
             await RefreshDownloadsAsync(cancellationToken);

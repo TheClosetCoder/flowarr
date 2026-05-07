@@ -4,6 +4,7 @@ public sealed class IntegrationOptions
 {
     public QBittorrentOptions QBittorrent { get; set; } = new();
     public RadarrOptions Radarr { get; set; } = new();
+    public SonarrOptions Sonarr { get; set; } = new();
     public StorageScannerOptions Storage { get; set; } = new();
     public CleanupOptions Cleanup { get; set; } = new();
     public AutoDownloadOptions AutoDownload { get; set; } = new();
@@ -23,6 +24,12 @@ public sealed class RadarrOptions
     public string? ApiKey { get; set; }
 }
 
+public sealed class SonarrOptions
+{
+    public string? BaseUrl { get; set; }
+    public string? ApiKey { get; set; }
+}
+
 public sealed class StorageScannerOptions
 {
     public string LocalPath { get; set; } = "/media";
@@ -32,6 +39,7 @@ public sealed class StorageScannerOptions
 public sealed class CleanupOptions
 {
     public bool DryRun { get; set; } = true;
+    public bool AllowDelete { get; set; }
 }
 
 public sealed class AutoDownloadOptions

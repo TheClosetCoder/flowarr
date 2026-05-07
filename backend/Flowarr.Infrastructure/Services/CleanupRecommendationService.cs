@@ -10,6 +10,7 @@ namespace Flowarr.Infrastructure.Services;
 
 public sealed class CleanupRecommendationService(
     FlowarrDbContext dbContext,
+    IConnectionSettingsService connectionSettingsService,
     IOptions<IntegrationOptions> options) : ICleanupRecommendationService
 {
     public async Task<IReadOnlyCollection<CleanupCandidate>> GenerateCandidatesAsync(CancellationToken cancellationToken = default)
@@ -37,7 +38,8 @@ public sealed class CleanupRecommendationService(
                 file.RemotePath.StartsWith(download.RemotePath, StringComparison.OrdinalIgnoreCase));
 
             var downloadComplete = relatedDownload?.Status is DownloadStatus.Complete or DownloadStatus.Seeding;
-            var knownLibraryItem = file.MediaItem?.ExistsInLibrary == true || file.MediaItem?.SourceSystem == "Radarr";
+            var knownLibraryItem = file.MediaItem?.ExistsInLibrary == true ||
+                                   file.MediaItem?.SourceSystem is "Radarr" or "Sonarr";
 
             if (file.ExistsOnSeedbox && downloadComplete && file.ImportedLocally && knownLibraryItem)
             {
@@ -47,7 +49,7 @@ public sealed class CleanupRecommendationService(
                     DownloadId = relatedDownload?.Id,
                     Path = file.RemotePath,
                     SizeBytes = file.SizeBytes,
-                    Reason = "Seedbox file appears imported locally and linked to a known media item.",
+                    Reason = $"Seedbox file appears imported locally. Evidence: download complete={downloadComplete}, imported locally={file.ImportedLocally}, known library item={knownLibraryItem}.",
                     Confidence = relatedDownload is null ? CleanupMatchConfidence.Uncertain : CleanupMatchConfidence.Certain,
                     DryRun = options.Value.Cleanup.DryRun
                 });
@@ -59,12 +61,30 @@ public sealed class CleanupRecommendationService(
         return candidates;
     }
 
-    public async Task<CleanupCandidate?> ApproveAsync(Guid candidateId, string actor, bool dryRun, CancellationToken cancellationToken = default)
+    public async Task<CleanupCandidate?> ApproveAsync(Guid candidateId, string actor, bool dryRun, string? confirmPath, CancellationToken cancellationToken = default)
     {
         var candidate = await dbContext.CleanupCandidates.FindAsync([candidateId], cancellationToken);
         if (candidate is null)
         {
             return null;
+        }
+
+        if (!dryRun)
+        {
+            if (!options.Value.Cleanup.AllowDelete)
+            {
+                throw new InvalidOperationException("Real deletion is disabled. Set Flowarr__Cleanup__AllowDelete=true to enable it.");
+            }
+
+            if (!string.Equals(confirmPath, candidate.Path, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Confirmation path must exactly match the cleanup candidate path.");
+            }
+
+            if (!await IsInsideAllowedRootAsync(candidate.Path, cancellationToken))
+            {
+                throw new InvalidOperationException("Cleanup path is outside configured seedbox or local media roots.");
+            }
         }
 
         candidate.Status = dryRun ? CleanupStatus.Approved : CleanupStatus.Deleted;
@@ -82,11 +102,28 @@ public sealed class CleanupRecommendationService(
             DryRun = dryRun,
             Details = dryRun
                 ? "Manual approval recorded. No file was deleted because dry-run mode is enabled."
-                : "Manual approval recorded. Delete action was logged; real deletion adapter is not implemented in MVP."
+                : "Manual approval recorded after exact path confirmation and allowed-root validation."
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return candidate;
+    }
+
+    private async Task<bool> IsInsideAllowedRootAsync(string path, CancellationToken cancellationToken)
+    {
+        var seedbox = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
+        var autoDownload = await connectionSettingsService.GetAutoDownloadAsync(cancellationToken);
+        var roots = seedbox.SeedboxRoots
+            .Where(root => root.Enabled)
+            .Select(root => root.Path)
+            .Concat(autoDownload.LocalMediaPaths.Where(root => root.Enabled).Select(root => root.Path))
+            .Where(root => !string.IsNullOrWhiteSpace(root))
+            .Select(root => root.TrimEnd('/', Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            .ToList();
+
+        return roots.Any(root => path.Equals(root, StringComparison.OrdinalIgnoreCase) ||
+                                 path.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase) ||
+                                 path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
     }
 
     public async Task<CleanupCandidate?> RejectAsync(Guid candidateId, string actor, CancellationToken cancellationToken = default)

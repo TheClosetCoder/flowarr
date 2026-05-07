@@ -230,6 +230,7 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
             string.IsNullOrWhiteSpace(request.PrivateKeyPath) ? saved.PrivateKeyPath : request.PrivateKeyPath,
             string.IsNullOrWhiteSpace(request.PrivateKeyPassphrase) && !request.ClearPrivateKeyPassphrase ? saved.PrivateKeyPassphrase : request.PrivateKeyPassphrase ?? string.Empty,
             string.IsNullOrWhiteSpace(request.RemoteRootPath) ? saved.RemoteRootPath : request.RemoteRootPath,
+            request.SeedboxRoots ?? saved.SeedboxRoots,
             !string.IsNullOrWhiteSpace(request.Password) || (!request.ClearPassword && saved.HasPassword),
             !string.IsNullOrWhiteSpace(request.PrivateKeyPassphrase) || (!request.ClearPrivateKeyPassphrase && saved.HasPrivateKeyPassphrase));
     }

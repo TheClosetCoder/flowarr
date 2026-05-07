@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Flowarr.Infrastructure.Integrations;
 using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,7 +9,8 @@ namespace Flowarr.Api.Controllers;
 [Route("api/connections")]
 public sealed class ConnectionsController(
     IConnectionSettingsService connectionSettingsService,
-    IConnectionTestService connectionTestService) : ControllerBase
+    IConnectionTestService connectionTestService,
+    ArrMediaCatalogClient arrMediaCatalogClient) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -26,8 +28,8 @@ public sealed class ConnectionsController(
                 value.SftpSeedbox.Host,
                 value.SftpSeedbox.Port
             },
-            radarr = new { configured = false, status = "not_configured" },
-            sonarr = new { configured = false, status = "not_configured" },
+            radarr = new { configured = value.Radarr.Enabled && HasValue(value.Radarr.BaseUrl) && value.Radarr.HasApiKey, status = "configured" },
+            sonarr = new { configured = value.Sonarr.Enabled && HasValue(value.Sonarr.BaseUrl) && value.Sonarr.HasApiKey, status = "configured" },
             plex = new { configured = false, status = "not_configured" },
             jellyfin = new { configured = false, status = "not_configured" }
         });
@@ -51,9 +53,12 @@ public sealed class ConnectionsController(
                 settings.SftpSeedbox.Username,
                 settings.SftpSeedbox.PrivateKeyPath,
                 settings.SftpSeedbox.RemoteRootPath,
+                settings.SftpSeedbox.SeedboxRoots,
                 settings.SftpSeedbox.HasPassword,
                 settings.SftpSeedbox.HasPrivateKeyPassphrase),
-            settings.AutoDownload);
+            settings.AutoDownload,
+            new ArrConnectionResponse(settings.Radarr.Enabled, settings.Radarr.BaseUrl, settings.Radarr.HasApiKey),
+            new ArrConnectionResponse(settings.Sonarr.Enabled, settings.Sonarr.BaseUrl, settings.Sonarr.HasApiKey));
     }
 
     [HttpPut("qbittorrent")]
@@ -89,6 +94,39 @@ public sealed class ConnectionsController(
         return NoContent();
     }
 
+    [HttpPut("radarr")]
+    public async Task<IActionResult> SaveRadarr(SaveArrConnectionRequest request, CancellationToken cancellationToken)
+    {
+        await connectionSettingsService.SaveRadarrAsync(request, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPut("sonarr")]
+    public async Task<IActionResult> SaveSonarr(SaveArrConnectionRequest request, CancellationToken cancellationToken)
+    {
+        await connectionSettingsService.SaveSonarrAsync(request, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("radarr/test")]
+    public Task<ConnectionTestResult> TestRadarr(SaveArrConnectionRequest request, CancellationToken cancellationToken)
+    {
+        return arrMediaCatalogClient.TestAsync("Radarr", request, cancellationToken);
+    }
+
+    [HttpPost("sonarr/test")]
+    public Task<ConnectionTestResult> TestSonarr(SaveArrConnectionRequest request, CancellationToken cancellationToken)
+    {
+        return arrMediaCatalogClient.TestAsync("Sonarr", request, cancellationToken);
+    }
+
+    [HttpGet("{system:regex(^radarr|sonarr$)}/root-folders")]
+    public async Task<IActionResult> GetArrRootFolders(string system, CancellationToken cancellationToken)
+    {
+        var folders = await arrMediaCatalogClient.GetRootFoldersAsync(system, cancellationToken);
+        return Ok(folders);
+    }
+
     private static bool HasValue(string? value) => !string.IsNullOrWhiteSpace(value);
 }
 
@@ -98,7 +136,11 @@ public sealed record ConnectionSettingsResponse(
     [property: JsonPropertyName("sftpSeedbox")]
     SftpSeedboxConnectionResponse SftpSeedbox,
     [property: JsonPropertyName("autoDownload")]
-    AutoDownloadConnectionSettings AutoDownload);
+    AutoDownloadConnectionSettings AutoDownload,
+    [property: JsonPropertyName("radarr")]
+    ArrConnectionResponse Radarr,
+    [property: JsonPropertyName("sonarr")]
+    ArrConnectionResponse Sonarr);
 
 public sealed record QBittorrentConnectionResponse(
     bool Enabled,
@@ -114,5 +156,11 @@ public sealed record SftpSeedboxConnectionResponse(
     string Username,
     string PrivateKeyPath,
     string RemoteRootPath,
+    SeedboxRootSettings[] SeedboxRoots,
     bool HasPassword,
     bool HasPrivateKeyPassphrase);
+
+public sealed record ArrConnectionResponse(
+    bool Enabled,
+    string BaseUrl,
+    bool HasApiKey);

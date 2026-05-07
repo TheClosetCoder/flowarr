@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, Check, ChevronUp, Download, FolderDown, FolderOpen, HardDrive, Plug, Settings, ShieldCheck, Trash2, X } from "lucide-react";
+import { Activity, Check, ChevronUp, Download, FolderDown, FolderOpen, HardDrive, LogOut, Plug, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import "./styles.css";
 
 type DashboardSummary = {
@@ -25,12 +25,18 @@ type LocalFolderListing = { currentPath: string; parentPath?: string; entries: L
 type LocalFolderEntry = { name: string; path: string };
 type ConnectionTestResult = { ok: boolean; message: string };
 type LocalMediaPath = { id?: string; enabled: boolean; name: string; path: string; role: string };
+type SeedboxRoot = { id?: string; enabled: boolean; name: string; kind: "Download" | "Media"; path: string };
 type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
-type TransferRule = { id?: string; enabled: boolean; name: string; remotePathPrefix: string; localPath: string };
+type TransferRule = { id?: string; enabled: boolean; name: string; remotePathPrefix: string; localPath: string; sourceRootKind: "Download" | "Media" };
+type ArrSettings = { enabled: boolean; baseUrl: string; hasApiKey: boolean };
+type AuthStatus = { setupComplete: boolean; authenticated: boolean };
+type JobRun = { id: string; jobType: string; status: string; startedAt: string; completedAt?: string; errorMessage?: string };
 type ConnectionSettings = {
   qbittorrent: { enabled: boolean; clientType: string; baseUrl: string; username: string; hasPassword: boolean };
-  sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; remoteRootPath: string; hasPassword: boolean; hasPrivateKeyPassphrase: boolean };
+  sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; remoteRootPath: string; seedboxRoots: SeedboxRoot[]; hasPassword: boolean; hasPrivateKeyPassphrase: boolean };
   autoDownload: { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[] };
+  radarr: ArrSettings;
+  sonarr: ArrSettings;
 };
 
 type RawConnectionSettings = Partial<ConnectionSettings> & {
@@ -49,12 +55,14 @@ function formatBytes(value: number) {
 }
 
 function App() {
+  const [auth, setAuth] = React.useState<AuthStatus | null>(null);
   const [activePage, setActivePage] = React.useState("Dashboard");
   const [dashboard, setDashboard] = React.useState<DashboardSummary | null>(null);
   const [downloads, setDownloads] = React.useState<DownloadItem[]>([]);
   const [storage, setStorage] = React.useState<StorageLocation[]>([]);
   const [candidates, setCandidates] = React.useState<CleanupCandidateSummary[]>([]);
   const [transfers, setTransfers] = React.useState<RemoteTransfer[]>([]);
+  const [jobs, setJobs] = React.useState<JobRun[]>([]);
   const [transferSettings, setTransferSettings] = React.useState<TransferSettings | null>(null);
   const [connectionSettings, setConnectionSettings] = React.useState<ConnectionSettings | null>(null);
   const [settingsError, setSettingsError] = React.useState("");
@@ -74,15 +82,34 @@ function App() {
   }, []);
 
   React.useEffect(() => {
+    void fetchJson<AuthStatus>("/api/auth/status")
+      .then(setAuth)
+      .catch(() => setAuth({ setupComplete: false, authenticated: false }));
+  }, []);
+
+  React.useEffect(() => {
+    if (!auth?.authenticated) {
+      return;
+    }
+
     void Promise.all([
       fetchJson<DashboardSummary>("/api/dashboard").then(setDashboard),
       fetchJson<DownloadItem[]>("/api/downloads").then(setDownloads),
       fetchJson<StorageLocation[]>("/api/storage").then(setStorage),
       fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates").then(setCandidates),
       fetchJson<RemoteTransfer[]>("/api/transfers").then(setTransfers),
+      fetchJson<JobRun[]>("/api/jobs").then(setJobs),
       refreshSettings()
     ]);
-  }, [refreshSettings]);
+  }, [auth?.authenticated, refreshSettings]);
+
+  if (!auth) {
+    return <div className="grid min-h-screen place-items-center bg-[#eef1ec] text-sm text-slate-600">Loading Flowarr...</div>;
+  }
+
+  if (!auth.authenticated) {
+    return <AuthScreen setupRequired={!auth.setupComplete} onAuthenticated={() => setAuth({ setupComplete: true, authenticated: true })} />;
+  }
 
   const pages = [
     { name: "Dashboard", icon: Activity },
@@ -129,6 +156,16 @@ function App() {
               <h2 className="text-2xl font-semibold">{activePage}</h2>
               <p className="text-sm text-slate-600">Dry-run cleanup is enabled by default. Deletion requires manual approval.</p>
             </div>
+            <button
+              onClick={async () => {
+                await postJson("/api/auth/logout");
+                setAuth({ setupComplete: true, authenticated: false });
+              }}
+              className="inline-flex items-center gap-2 rounded border border-line bg-white px-3 py-2 text-sm"
+            >
+              <LogOut size={16} />
+              Logout
+            </button>
             <div className="flex rounded border border-line bg-white p-1 lg:hidden">
               {pages.map((page) => (
                 <button
@@ -149,7 +186,7 @@ function App() {
           {activePage === "Downloads" && <Downloads downloads={downloads} />}
           {activePage === "Transfers" && <Transfers transfers={transfers} settings={transferSettings} />}
           {activePage === "Cleanup" && <Cleanup candidates={candidates} setCandidates={setCandidates} />}
-          {activePage === "Settings" && <SettingsPanel transferSettings={transferSettings} />}
+          {activePage === "Settings" && <SettingsPanel transferSettings={transferSettings} jobs={jobs} />}
         </div>
       </main>
     </div>
@@ -157,7 +194,7 @@ function App() {
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiBase}${path}`);
+  const response = await fetch(`${apiBase}${path}`, { credentials: "include" });
   if (!response.ok) throw new Error(`Request failed: ${path}`);
   return response.json();
 }
@@ -165,6 +202,7 @@ async function fetchJson<T>(path: string): Promise<T> {
 async function putJson(path: string, body: unknown) {
   const response = await fetch(`${apiBase}${path}`, {
     method: "PUT",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
@@ -178,12 +216,53 @@ function normalizeAutoDownload(autoDownload: Partial<ConnectionSettings["autoDow
     overwriteExisting: autoDownload?.overwriteExisting ?? false,
     allowedExtensions: autoDownload?.allowedExtensions ?? [".mkv", ".mp4", ".avi", ".mov", ".m4v", ".srt"],
     localMediaPaths: (autoDownload?.localMediaPaths ?? []).map((path) => ({ ...path, id: path.id ?? createClientId() })),
-    transferRules: (autoDownload?.transferRules ?? []).map((rule) => ({ ...rule, id: rule.id ?? createClientId() }))
+    transferRules: (autoDownload?.transferRules ?? []).map((rule) => ({ ...rule, sourceRootKind: rule.sourceRootKind ?? "Download", id: rule.id ?? createClientId() }))
   };
 }
 
 function createClientId() {
   return globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function AuthScreen({ setupRequired, onAuthenticated }: { setupRequired: boolean; onAuthenticated: () => void }) {
+  const [username, setUsername] = React.useState("admin");
+  const [password, setPassword] = React.useState("");
+  const [message, setMessage] = React.useState("");
+
+  async function submit() {
+    setMessage(setupRequired ? "Creating admin..." : "Logging in...");
+    try {
+      await postJson(setupRequired ? "/api/auth/setup" : "/api/auth/login", { username, password });
+      onAuthenticated();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Authentication failed.");
+    }
+  }
+
+  return (
+    <div className="grid min-h-screen place-items-center bg-[#eef1ec] px-4">
+      <div className="w-full max-w-sm rounded border border-line bg-white p-5">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded bg-accent text-white">
+            <ShieldCheck size={21} />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold">Flowarr</h1>
+            <p className="text-sm text-slate-600">{setupRequired ? "First-run admin setup" : "Admin login"}</p>
+          </div>
+        </div>
+        <div className="grid gap-3">
+          <Input label="Username" value={username} onChange={setUsername} />
+          <Input label="Password" type="password" value={password} onChange={setPassword} />
+          {setupRequired && <p className="text-xs text-slate-500">Use at least 12 characters. The password is stored as a salted hash.</p>}
+          <button onClick={submit} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">
+            {setupRequired ? "Create admin" : "Login"}
+          </button>
+          {message && <p className="text-sm text-slate-600">{message}</p>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function defaultConnectionSettings(): ConnectionSettings {
@@ -202,10 +281,13 @@ function defaultConnectionSettings(): ConnectionSettings {
       username: "",
       privateKeyPath: "",
       remoteRootPath: "",
+      seedboxRoots: [],
       hasPassword: false,
       hasPrivateKeyPassphrase: false
     },
-    autoDownload: normalizeAutoDownload(undefined)
+    autoDownload: normalizeAutoDownload(undefined),
+    radarr: { enabled: false, baseUrl: "", hasApiKey: false },
+    sonarr: { enabled: false, baseUrl: "", hasApiKey: false }
   };
 }
 
@@ -214,13 +296,16 @@ function normalizeConnectionSettings(settings: RawConnectionSettings): Connectio
   return {
     qbittorrent: settings.qbittorrent ?? settings.qBittorrent ?? defaults.qbittorrent,
     sftpSeedbox: settings.sftpSeedbox ?? settings.SftpSeedbox ?? settings.sftpseedbox ?? defaults.sftpSeedbox,
-    autoDownload: normalizeAutoDownload(settings.autoDownload)
+    autoDownload: normalizeAutoDownload(settings.autoDownload),
+    radarr: settings.radarr ?? defaults.radarr,
+    sonarr: settings.sonarr ?? defaults.sonarr
   };
 }
 
 async function postJson<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${apiBase}${path}`, {
     method: "POST",
+    credentials: "include",
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
@@ -288,7 +373,7 @@ function Connections({ settings, error, onSaved }: { settings: ConnectionSetting
 }
 
 function PlannedConnections() {
-  const integrations = ["Radarr", "Sonarr", "Plex", "Jellyfin"];
+  const integrations = ["Plex", "Jellyfin"];
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {integrations.map((name) => (
@@ -306,20 +391,28 @@ function PlannedConnections() {
 
 function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; onSaved: () => Promise<void> }) {
   const [qbittorrent, setQbittorrent] = React.useState({ ...settings.qbittorrent, password: "", clearPassword: false });
-  const [sftpSeedbox, setSftpSeedbox] = React.useState({ ...settings.sftpSeedbox, password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
+  const [sftpSeedbox, setSftpSeedbox] = React.useState({ ...settings.sftpSeedbox, seedboxRoots: settings.sftpSeedbox.seedboxRoots.map((root) => ({ ...root, id: root.id ?? createClientId() })), password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
   const [autoDownload, setAutoDownload] = React.useState({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
+  const [radarr, setRadarr] = React.useState({ ...settings.radarr, apiKey: "", clearApiKey: false });
+  const [sonarr, setSonarr] = React.useState({ ...settings.sonarr, apiKey: "", clearApiKey: false });
   const [message, setMessage] = React.useState("");
   const [torrentTest, setTorrentTest] = React.useState<ConnectionTestResult | null>(null);
   const [sftpTest, setSftpTest] = React.useState<ConnectionTestResult | null>(null);
+  const [radarrTest, setRadarrTest] = React.useState<ConnectionTestResult | null>(null);
+  const [sonarrTest, setSonarrTest] = React.useState<ConnectionTestResult | null>(null);
   const [testingTorrent, setTestingTorrent] = React.useState(false);
   const [testingSftp, setTestingSftp] = React.useState(false);
 
   React.useEffect(() => {
     setQbittorrent({ ...settings.qbittorrent, password: "", clearPassword: false });
-    setSftpSeedbox({ ...settings.sftpSeedbox, password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
+    setSftpSeedbox({ ...settings.sftpSeedbox, seedboxRoots: settings.sftpSeedbox.seedboxRoots.map((root) => ({ ...root, id: root.id ?? createClientId() })), password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
     setAutoDownload({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
+    setRadarr({ ...settings.radarr, apiKey: "", clearApiKey: false });
+    setSonarr({ ...settings.sonarr, apiKey: "", clearApiKey: false });
     setTorrentTest(null);
     setSftpTest(null);
+    setRadarrTest(null);
+    setSonarrTest(null);
   }, [settings]);
 
   async function saveTorrentClient() {
@@ -364,7 +457,8 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
       port: Number(sftpSeedbox.port) || 22,
       username: sftpSeedbox.username || "",
       privateKeyPath: sftpSeedbox.privateKeyPath || "",
-      remoteRootPath: sftpSeedbox.remoteRootPath || ""
+      remoteRootPath: sftpSeedbox.remoteRootPath || "",
+      seedboxRoots: sftpSeedbox.seedboxRoots.map(({ id, ...root }) => root)
     });
     await onSaved();
     setMessage("Seedbox saved securely.");
@@ -381,7 +475,8 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
         port: Number(sftpSeedbox.port) || 22,
         username: sftpSeedbox.username || "",
         privateKeyPath: sftpSeedbox.privateKeyPath || "",
-        remoteRootPath: sftpSeedbox.remoteRootPath || ""
+        remoteRootPath: sftpSeedbox.remoteRootPath || "",
+        seedboxRoots: sftpSeedbox.seedboxRoots.map(({ id, ...root }) => root)
       });
       setSftpTest(result);
       setMessage(`${result.ok ? "SFTP test passed" : "SFTP test failed"}: ${result.message}`);
@@ -409,11 +504,28 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
         enabled: rule.enabled,
         name: rule.name || "Rule",
         remotePathPrefix: rule.remotePathPrefix || "",
-        localPath: rule.localPath || autoDownload.localImportPath || "/media/import"
+        localPath: rule.localPath || autoDownload.localImportPath || "/media/import",
+        sourceRootKind: rule.sourceRootKind || "Download"
       }))
     });
     await onSaved();
     setMessage("Auto-download saved.");
+  }
+
+  async function saveArr(system: "radarr" | "sonarr") {
+    const state = system === "radarr" ? radarr : sonarr;
+    setMessage(`Saving ${system}...`);
+    await putJson(`/api/connections/${system}`, state);
+    await onSaved();
+    setMessage(`${system} saved securely.`);
+  }
+
+  async function testArr(system: "radarr" | "sonarr") {
+    const state = system === "radarr" ? radarr : sonarr;
+    const setter = system === "radarr" ? setRadarrTest : setSonarrTest;
+    setter({ ok: true, message: `Testing ${system}...` });
+    const result = await postJson<ConnectionTestResult>(`/api/connections/${system}/test`, state);
+    setter(result);
   }
 
   return (
@@ -473,7 +585,40 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             <p className="text-xs text-slate-500">Leave blank to use the saved encrypted password. Typed passwords are sent once to the Flowarr API for save/test.</p>
             <Input label="Private key path" value={sftpSeedbox.privateKeyPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, privateKeyPath: value })} placeholder="/keys/id_rsa" />
             <Input label={sftpSeedbox.hasPrivateKeyPassphrase ? "Key passphrase (already saved)" : "Key passphrase"} type="password" value={sftpSeedbox.privateKeyPassphrase} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, privateKeyPassphrase: value })} />
-            <Input label="Remote root path" value={sftpSeedbox.remoteRootPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, remoteRootPath: value })} placeholder="/home/user/files" />
+            <Input label="Legacy remote root path" value={sftpSeedbox.remoteRootPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, remoteRootPath: value })} placeholder="/home/user/files" />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-sm font-medium">Seedbox roots</h4>
+                <button
+                  type="button"
+                  onClick={() => setSftpSeedbox({
+                    ...sftpSeedbox,
+                    seedboxRoots: [...sftpSeedbox.seedboxRoots, { id: createClientId(), enabled: true, name: "Downloads", kind: "Download", path: "/downloads" }]
+                  })}
+                  className="rounded border border-line px-3 py-1 text-sm"
+                >
+                  Add root
+                </button>
+              </div>
+              {sftpSeedbox.seedboxRoots.map((root, index) => (
+                <div key={root.id ?? index} className="grid gap-2 rounded border border-line bg-panel p-3 md:grid-cols-[auto_1fr_1fr_2fr_auto]">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={root.enabled} onChange={(event) => updateSeedboxRoot(index, { enabled: event.target.checked })} />
+                    Enabled
+                  </label>
+                  <Input label="Name" value={root.name} onChange={(value) => updateSeedboxRoot(index, { name: value })} placeholder="Movies" />
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-slate-600">Kind</span>
+                    <select value={root.kind} onChange={(event) => updateSeedboxRoot(index, { kind: event.target.value as "Download" | "Media" })} className="rounded border border-line px-3 py-2">
+                      <option value="Download">Download</option>
+                      <option value="Media">Media</option>
+                    </select>
+                  </label>
+                  <Input label="Remote path" value={root.path} onChange={(value) => updateSeedboxRoot(index, { path: value })} placeholder="/media/Movies" />
+                  <button type="button" onClick={() => setSftpSeedbox({ ...sftpSeedbox, seedboxRoots: sftpSeedbox.seedboxRoots.filter((_, rootIndex) => rootIndex !== index) })} className="self-end rounded border border-line px-3 py-2 text-sm">Remove</button>
+                </div>
+              ))}
+            </div>
             <div className="grid gap-2 text-sm text-slate-600">
               {sftpSeedbox.hasPassword && (
                 <label className="flex items-center gap-2">
@@ -497,6 +642,11 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             {sftpTest && <ConnectionTestStatus result={sftpTest} pending={testingSftp} />}
           </div>
         </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <ArrConnectionCard title="Radarr" value={radarr} test={radarrTest} onChange={setRadarr} onSave={() => saveArr("radarr")} onTest={() => testArr("radarr")} />
+        <ArrConnectionCard title="Sonarr" value={sonarr} test={sonarrTest} onChange={setSonarr} onSave={() => saveArr("sonarr")} onTest={() => testArr("sonarr")} />
       </div>
 
       <div className="rounded border border-line bg-white p-4">
@@ -554,7 +704,7 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
             <button
               onClick={() => setAutoDownload({
                 ...autoDownload,
-                transferRules: [...autoDownload.transferRules, { id: createClientId(), enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localMediaPaths[0]?.path || autoDownload.localImportPath || "/media/import" }]
+                transferRules: [...autoDownload.transferRules, { id: createClientId(), enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localMediaPaths[0]?.path || autoDownload.localImportPath || "/media/import", sourceRootKind: "Download" }]
               })}
               className="rounded border border-line px-3 py-1 text-sm"
             >
@@ -572,6 +722,13 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
                 Enabled
               </label>
               <Input label="Name" value={rule.name} onChange={(value) => updateTransferRule(index, { name: value })} placeholder="Movies" />
+              <label className="grid gap-1 text-sm">
+                <span className="text-slate-600">Source root</span>
+                <select value={rule.sourceRootKind} onChange={(event) => updateTransferRule(index, { sourceRootKind: event.target.value as "Download" | "Media" })} className="rounded border border-line px-3 py-2">
+                  <option value="Download">Download</option>
+                  <option value="Media">Media</option>
+                </select>
+              </label>
               <Input label="Remote folder" value={rule.remotePathPrefix} onChange={(value) => updateTransferRule(index, { remotePathPrefix: value })} placeholder="/downloads/movies" />
               <LocalPathInput label="Local destination" value={rule.localPath} onChange={(value) => updateTransferRule(index, { localPath: value })} placeholder="/media/Movies" />
               <button
@@ -607,6 +764,55 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
         pathIndex === index ? { ...path, ...patch } : path)
     });
   }
+
+  function updateSeedboxRoot(index: number, patch: Partial<SeedboxRoot>) {
+    setSftpSeedbox({
+      ...sftpSeedbox,
+      seedboxRoots: sftpSeedbox.seedboxRoots.map((root, rootIndex) =>
+        rootIndex === index ? { ...root, ...patch } : root)
+    });
+  }
+}
+
+function ArrConnectionCard({
+  title,
+  value,
+  test,
+  onChange,
+  onSave,
+  onTest
+}: {
+  title: string;
+  value: ArrSettings & { apiKey: string; clearApiKey: boolean };
+  test: ConnectionTestResult | null;
+  onChange: (value: ArrSettings & { apiKey: string; clearApiKey: boolean }) => void;
+  onSave: () => Promise<void>;
+  onTest: () => Promise<void>;
+}) {
+  return (
+    <div className="rounded border border-line bg-white p-4">
+      <h3 className="font-medium">{title}</h3>
+      <div className="mt-4 grid gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={value.enabled} onChange={(event) => onChange({ ...value, enabled: event.target.checked })} />
+          Enabled
+        </label>
+        <Input label="Base URL" value={value.baseUrl} onChange={(baseUrl) => onChange({ ...value, baseUrl })} placeholder={`https://your-${title.toLowerCase()}-host`} />
+        <Input label={value.hasApiKey ? "API key (already saved)" : "API key"} type="password" value={value.apiKey} onChange={(apiKey) => onChange({ ...value, apiKey })} placeholder={value.hasApiKey ? "Leave blank to keep current" : ""} />
+        {value.hasApiKey && (
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" checked={value.clearApiKey} onChange={(event) => onChange({ ...value, clearApiKey: event.target.checked })} />
+            Clear saved API key
+          </label>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={onSave} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Save {title}</button>
+          <button type="button" onClick={onTest} className="rounded border border-line px-4 py-2 text-sm font-medium">Test connection</button>
+        </div>
+        {test && <ConnectionTestStatus result={test} pending={test.message.startsWith("Testing")} />}
+      </div>
+    </div>
+  );
 }
 
 function ConnectionTestStatus({ result, pending }: { result: ConnectionTestResult; pending: boolean }) {
@@ -818,14 +1024,29 @@ function Transfers({ transfers, settings }: { transfers: RemoteTransfer[]; setti
 }
 
 function Cleanup({ candidates, setCandidates }: { candidates: CleanupCandidateSummary[]; setCandidates: (items: CleanupCandidateSummary[]) => void }) {
+  const [message, setMessage] = React.useState("");
+
   async function generate() {
     const generated = await fetchJson<CleanupCandidateSummary[]>("/api/cleanup/generate");
     setCandidates(generated);
   }
 
+  async function approveDryRun(id: string) {
+    await postJson(`/api/cleanup/candidates/${id}/approve`, { actor: "admin", dryRun: true });
+    setCandidates(await fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates"));
+    setMessage("Dry-run approval recorded.");
+  }
+
+  async function reject(id: string) {
+    await postJson(`/api/cleanup/candidates/${id}/reject`, { actor: "admin" });
+    setCandidates(await fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates"));
+    setMessage("Candidate rejected.");
+  }
+
   return (
     <section className="space-y-4">
       <button onClick={generate} className="rounded bg-accent px-4 py-2 text-sm font-medium text-white">Generate recommendations</button>
+      {message && <p className="text-sm text-slate-600">{message}</p>}
       <div className="space-y-3">
         {candidates.map((item) => (
           <div key={item.id} className="rounded border border-line bg-white p-4">
@@ -839,8 +1060,8 @@ function Cleanup({ candidates, setCandidates }: { candidates: CleanupCandidateSu
             <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
               <span>{formatBytes(item.sizeBytes)}</span>
               <span className="text-slate-500">Dry-run: {String(item.dryRun)}</span>
-              <button className="rounded border border-line px-3 py-1">Approve dry-run</button>
-              <button className="rounded border border-line px-3 py-1">Reject</button>
+              <button onClick={() => approveDryRun(item.id)} className="rounded border border-line px-3 py-1">Approve dry-run</button>
+              <button onClick={() => reject(item.id)} className="rounded border border-line px-3 py-1">Reject</button>
             </div>
           </div>
         ))}
@@ -849,7 +1070,7 @@ function Cleanup({ candidates, setCandidates }: { candidates: CleanupCandidateSu
   );
 }
 
-function SettingsPanel({ transferSettings }: { transferSettings: TransferSettings | null }) {
+function SettingsPanel({ transferSettings, jobs }: { transferSettings: TransferSettings | null; jobs: JobRun[] }) {
   return (
     <section className="space-y-4">
       <div className="rounded border border-line bg-white p-5">
@@ -863,6 +1084,16 @@ function SettingsPanel({ transferSettings }: { transferSettings: TransferSetting
           <p>SFTP configured: {String(transferSettings?.sftpSeedbox.configured ?? false)}</p>
           <p>Host: {transferSettings?.sftpSeedbox.host || "not set"}</p>
           <p>Local paths: {String(transferSettings?.localMediaPaths.length ?? 0)}</p>
+        </div>
+      </div>
+      <div className="rounded border border-line bg-white p-5">
+        <h3 className="font-medium">Job history</h3>
+        <div className="mt-3 space-y-2 text-sm text-slate-700">
+          {jobs.length ? jobs.slice(0, 10).map((job) => (
+            <p key={job.id} className="rounded bg-panel px-3 py-2">
+              {job.jobType} - {job.status} - {new Date(job.startedAt).toLocaleString()}{job.errorMessage ? ` - ${job.errorMessage}` : ""}
+            </p>
+          )) : <p className="text-slate-500">No jobs recorded yet.</p>}
         </div>
       </div>
     </section>

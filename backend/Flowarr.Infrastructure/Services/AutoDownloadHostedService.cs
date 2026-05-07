@@ -71,6 +71,13 @@ public sealed class AutoDownloadHostedService(
                     continue;
                 }
 
+                var seedbox = await connectionSettings.GetSftpSeedboxAsync(cancellationToken);
+                if (!IsAllowedSourcePath(seedbox, transferRule, download.RemotePath!))
+                {
+                    logger.LogWarning("Skipping {RemotePath}; it is outside configured {RootKind} seedbox roots.", download.RemotePath, transferRule.SourceRootKind);
+                    continue;
+                }
+
                 await DownloadAsync(dbContext, transferClient, autoDownload, transferRule, download, cancellationToken);
             }
         }
@@ -149,7 +156,7 @@ public sealed class AutoDownloadHostedService(
     {
         var rules = settings.TransferRules.Length > 0
             ? settings.TransferRules
-            : [new TransferRuleSettings(true, "Default", string.Empty, settings.LocalImportPath)];
+            : [new TransferRuleSettings(true, "Default", string.Empty, settings.LocalImportPath, "Download")];
 
         return rules
             .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.LocalPath))
@@ -157,5 +164,23 @@ public sealed class AutoDownloadHostedService(
             .FirstOrDefault(rule =>
                 string.IsNullOrWhiteSpace(rule.RemotePathPrefix) ||
                 remotePath.StartsWith(rule.RemotePathPrefix.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsAllowedSourcePath(SftpSeedboxConnectionSettings seedbox, TransferRuleSettings rule, string remotePath)
+    {
+        var kind = string.IsNullOrWhiteSpace(rule.SourceRootKind) ? "Download" : rule.SourceRootKind;
+        var roots = seedbox.SeedboxRoots
+            .Where(root => root.Enabled && root.Kind.Equals(kind, StringComparison.OrdinalIgnoreCase))
+            .Select(root => root.Path.TrimEnd('/'))
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .ToList();
+
+        if (roots.Count == 0)
+        {
+            return true;
+        }
+
+        return roots.Any(root => remotePath.Equals(root, StringComparison.OrdinalIgnoreCase) ||
+                                 remotePath.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase));
     }
 }

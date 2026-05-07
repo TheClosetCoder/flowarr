@@ -37,6 +37,11 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
             client.Connect();
 
             var normalizedRemotePath = NormalizeRemotePath(remotePath);
+            if (!IsWithinConfiguredRoots(normalizedRemotePath))
+            {
+                return new RemoteTransferResult(normalizedRemotePath, localRootPath, 0, true, "Remote path is outside configured seedbox roots.");
+            }
+
             if (!client.Exists(normalizedRemotePath))
             {
                 return new RemoteTransferResult(normalizedRemotePath, localRootPath, 0, true, "Remote path does not exist.");
@@ -70,13 +75,28 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
 
     private string NormalizeRemotePath(string remotePath)
     {
-        var root = (_seedbox?.RemoteRootPath ?? string.Empty).TrimEnd('/');
+        var root = (_seedbox?.SeedboxRoots.FirstOrDefault(item => item.Enabled && item.Kind.Equals("Download", StringComparison.OrdinalIgnoreCase))?.Path
+            ?? _seedbox?.RemoteRootPath
+            ?? string.Empty).TrimEnd('/');
         if (string.IsNullOrWhiteSpace(root) || remotePath.StartsWith("/", StringComparison.Ordinal))
         {
             return remotePath;
         }
 
         return $"{root}/{remotePath.TrimStart('/')}";
+    }
+
+    private bool IsWithinConfiguredRoots(string remotePath)
+    {
+        var roots = _seedbox?.SeedboxRoots
+            .Where(root => root.Enabled)
+            .Select(root => root.Path.TrimEnd('/'))
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .ToList() ?? [];
+
+        return roots.Count == 0 ||
+               roots.Any(root => remotePath.Equals(root, StringComparison.OrdinalIgnoreCase) ||
+                                 remotePath.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase));
     }
 
     private long DownloadDirectory(SftpClient client, string remotePath, string localRootPath, bool includeDirectoryName, CancellationToken cancellationToken)

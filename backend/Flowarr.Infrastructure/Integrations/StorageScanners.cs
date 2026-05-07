@@ -85,10 +85,14 @@ public sealed class SeedboxStorageScanner(
                 : [new StorageSnapshot("Seedbox", StorageKind.Seedbox, fallback, 0, 0)];
         }
 
+        var configuredRoots = seedbox.SeedboxRoots
+            .Where(root => root.Enabled && !string.IsNullOrWhiteSpace(root.Path))
+            .Select(root => new { Name = $"Seedbox {root.Kind}: {root.Name}", Path = root.Path })
+            .ToList();
         var remotePaths = autoDownload.TransferRules
             .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.RemotePathPrefix))
-            .Select(rule => new { Name = $"Seedbox: {rule.Name}", Path = NormalizeRemotePath(seedbox.RemoteRootPath, rule.RemotePathPrefix) })
-            .Append(new { Name = "Seedbox root", Path = NormalizeRemotePath(seedbox.RemoteRootPath, string.Empty) })
+            .Select(rule => new { Name = $"Seedbox rule: {rule.Name}", Path = NormalizeRemotePath(GetRootForKind(seedbox, rule.SourceRootKind), rule.RemotePathPrefix) })
+            .Concat(configuredRoots)
             .Where(item => !string.IsNullOrWhiteSpace(item.Path))
             .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
@@ -137,6 +141,13 @@ public sealed class SeedboxStorageScanner(
         }
 
         return new SftpClient(seedbox.Host, seedbox.Port, seedbox.Username, seedbox.Password);
+    }
+
+    private static string GetRootForKind(SftpSeedboxConnectionSettings seedbox, string sourceRootKind)
+    {
+        return seedbox.SeedboxRoots
+            .FirstOrDefault(root => root.Enabled && root.Kind.Equals(sourceRootKind, StringComparison.OrdinalIgnoreCase))
+            ?.Path ?? seedbox.RemoteRootPath;
     }
 
     private static StorageSnapshot BuildSftpSnapshot(

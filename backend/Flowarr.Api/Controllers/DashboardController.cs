@@ -3,7 +3,6 @@ using Flowarr.Core.Entities;
 using Flowarr.Core.Integrations;
 using Flowarr.Core.Models;
 using Flowarr.Infrastructure.Data;
-using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,7 +19,6 @@ public sealed class DashboardController(
     [HttpGet]
     public async Task<ActionResult<DashboardSummary>> Get(CancellationToken cancellationToken)
     {
-        await LegacyMockDataCleaner.RemoveAsync(dbContext, cancellationToken);
         await RefreshDashboardSourcesAsync(cancellationToken);
 
         var storage = await dbContext.StorageLocations

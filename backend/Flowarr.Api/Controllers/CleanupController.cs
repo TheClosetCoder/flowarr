@@ -1,6 +1,6 @@
+using Flowarr.Core.Entities;
 using Flowarr.Core.Services;
 using Flowarr.Infrastructure.Data;
-using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,9 +15,6 @@ public sealed class CleanupController(
     [HttpGet("candidates")]
     public async Task<IActionResult> GetCandidates(CancellationToken cancellationToken)
     {
-        await LegacyMockDataCleaner.RemoveAsync(dbContext, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
         var candidates = await dbContext.CleanupCandidates
             .OrderByDescending(candidate => candidate.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -28,9 +25,6 @@ public sealed class CleanupController(
     [HttpPost("generate")]
     public async Task<IActionResult> Generate(CancellationToken cancellationToken)
     {
-        await LegacyMockDataCleaner.RemoveAsync(dbContext, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
         var candidates = await cleanupRecommendationService.GenerateCandidatesAsync(cancellationToken);
         return Ok(candidates);
     }
@@ -38,11 +32,20 @@ public sealed class CleanupController(
     [HttpPost("candidates/{candidateId:guid}/approve")]
     public async Task<IActionResult> Approve(Guid candidateId, ApproveCleanupRequest request, CancellationToken cancellationToken)
     {
-        var candidate = await cleanupRecommendationService.ApproveAsync(
-            candidateId,
-            string.IsNullOrWhiteSpace(request.Actor) ? "local-user" : request.Actor,
-            request.DryRun,
-            cancellationToken);
+        CleanupCandidate? candidate;
+        try
+        {
+            candidate = await cleanupRecommendationService.ApproveAsync(
+                candidateId,
+                string.IsNullOrWhiteSpace(request.Actor) ? "local-user" : request.Actor,
+                request.DryRun,
+                request.ConfirmPath,
+                cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
 
         return candidate is null ? NotFound() : Ok(candidate);
     }
@@ -59,5 +62,5 @@ public sealed class CleanupController(
     }
 }
 
-public sealed record ApproveCleanupRequest(string? Actor, bool DryRun = true);
+public sealed record ApproveCleanupRequest(string? Actor, bool DryRun = true, string? ConfirmPath = null);
 public sealed record RejectCleanupRequest(string? Actor);

@@ -18,4 +18,6 @@ public class FlowarrDbContext : DbContext
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<RemoteTransfer> RemoteTransfers => Set<RemoteTransfer>();
     public DbSet<IntegrationConnection> IntegrationConnections => Set<IntegrationConnection>();
+    public DbSet<AdminUser> AdminUsers => Set<AdminUser>();
+    public DbSet<JobRun> JobRuns => Set<JobRun>();
 }
