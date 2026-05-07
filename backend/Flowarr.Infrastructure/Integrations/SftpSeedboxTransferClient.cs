@@ -58,6 +58,45 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
         }, cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<RemoteFileEntry>> ListAsync(string remotePath, CancellationToken cancellationToken = default)
+    {
+        _seedbox = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
+
+        if (!await IsConfiguredAsync(cancellationToken))
+        {
+            return [];
+        }
+
+        return await Task.Run<IReadOnlyCollection<RemoteFileEntry>>(() =>
+        {
+            using var client = CreateClient();
+            client.Connect();
+
+            var normalizedRemotePath = NormalizeRemotePath(remotePath);
+            if (!IsWithinConfiguredRoots(normalizedRemotePath) || !client.Exists(normalizedRemotePath))
+            {
+                client.Disconnect();
+                return [];
+            }
+
+            var attributes = client.GetAttributes(normalizedRemotePath);
+            if (!attributes.IsDirectory)
+            {
+                client.Disconnect();
+                return [new RemoteFileEntry(Path.GetFileName(normalizedRemotePath), normalizedRemotePath, false, attributes.Size)];
+            }
+
+            var entries = client.ListDirectory(normalizedRemotePath)
+                .Where(entry => entry.Name is not "." and not "..")
+                .OrderBy(entry => entry.Name)
+                .Select(entry => new RemoteFileEntry(entry.Name, entry.FullName, entry.IsDirectory, entry.Attributes.Size))
+                .ToList();
+
+            client.Disconnect();
+            return entries;
+        }, cancellationToken);
+    }
+
     private SftpClient CreateClient()
     {
         var seedbox = _seedbox ?? throw new InvalidOperationException("SFTP seedbox settings were not loaded.");

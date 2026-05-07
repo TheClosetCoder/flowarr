@@ -67,6 +67,21 @@ public sealed class AutoDownloadHostedService(
             {
                 await TryDownloadAsync(dbContext, transferClient, connectionSettings, autoDownload, file.RemotePath!, null, cancellationToken);
             }
+
+            foreach (var rule in autoDownload.TransferRules.Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.LocalPath)))
+            {
+                var sourcePath = GetEffectiveSourcePrefix(rule);
+                if (string.IsNullOrWhiteSpace(sourcePath))
+                {
+                    continue;
+                }
+
+                var entries = await transferClient.ListAsync(sourcePath, cancellationToken);
+                foreach (var entry in entries.Take(100))
+                {
+                    await TryDownloadAsync(dbContext, transferClient, connectionSettings, autoDownload, entry.RemotePath, null, cancellationToken);
+                }
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
