@@ -20,7 +20,7 @@ type DashboardStorageLocation = { name: string; kind: string; pathOrEndpoint: st
 type DashboardDownload = { id: string; client: string; name: string; status: string; progress: number; sizeBytes: number; remotePath?: string; updatedAt: string };
 type DownloadItem = { id: string; name: string; client: string; status: string; progress: number; sizeBytes: number; remotePath?: string };
 type StorageLocation = { id: string; name: string; kind: string | number; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
-type RemoteTransfer = { id: string; provider: string; remotePath: string; localPath: string; bytesTransferred: number; status: string; message?: string; createdAt: string; completedAt?: string };
+type RemoteTransfer = { id: string; provider: string; remotePath: string; localPath: string; bytesTransferred: number; totalBytes: number; status: string; message?: string; createdAt: string; completedAt?: string };
 type LocalFolderListing = { currentPath: string; parentPath?: string; entries: LocalFolderEntry[] };
 type LocalFolderEntry = { name: string; path: string };
 type ConnectionTestResult = { ok: boolean; message: string };
@@ -132,6 +132,23 @@ function App() {
       refreshSettings()
     ]);
   }, [auth?.authenticated, refreshSettings]);
+
+  React.useEffect(() => {
+    if (!auth?.authenticated) {
+      return;
+    }
+
+    const hasActiveTransfers = transfers.some((transfer) => transfer.status === "Queued" || transfer.status === "Running");
+    if (activePage !== "Transfers" && !hasActiveTransfers) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void fetchJson<RemoteTransfer[]>("/api/transfers").then(setTransfers);
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [activePage, auth?.authenticated, transfers]);
 
   React.useEffect(() => {
     const onHashChange = () => {
@@ -1331,13 +1348,35 @@ function Transfers({ transfers, settings }: { transfers: RemoteTransfer[]; setti
           item.provider,
           item.remotePath,
           item.localPath,
-          formatBytes(item.bytesTransferred),
+          `${Math.round(getTransferProgress(item) * 100)}%`,
+          `${formatBytes(item.bytesTransferred)} / ${formatBytes(item.totalBytes)}`,
           item.message ?? ""
         ])}
-        headers={["Status", "Provider", "Remote path", "Local path", "Bytes", "Message"]}
+        headers={["Status", "Provider", "Remote path", "Local path", "Progress", "Bytes", "Message"]}
       />
+      <div className="space-y-3">
+        {transfers.filter((item) => item.status === "Queued" || item.status === "Running").map((item) => (
+          <div key={item.id} className="rounded border border-line bg-white p-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="break-all font-medium">{item.remotePath}</span>
+              <span>{Math.round(getTransferProgress(item) * 100)}% · {formatBytes(item.bytesTransferred)} / {formatBytes(item.totalBytes)}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded bg-panel">
+              <div className="h-full bg-accent transition-all" style={{ width: `${Math.round(getTransferProgress(item) * 100)}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
+}
+
+function getTransferProgress(transfer: RemoteTransfer) {
+  if (transfer.totalBytes <= 0) {
+    return transfer.status === "Completed" ? 1 : 0;
+  }
+
+  return Math.min(1, transfer.bytesTransferred / transfer.totalBytes);
 }
 
 function Cleanup({ candidates, setCandidates }: { candidates: CleanupCandidateSummary[]; setCandidates: (items: CleanupCandidateSummary[]) => void }) {

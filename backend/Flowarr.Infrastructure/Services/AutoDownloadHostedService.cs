@@ -79,8 +79,28 @@ public sealed class AutoDownloadHostedService(
                 var entries = await transferClient.ListAsync(sourcePath, cancellationToken);
                 foreach (var entry in entries.Take(100))
                 {
-                    await TryDownloadAsync(dbContext, transferClient, connectionSettings, autoDownload, entry.RemotePath, null, cancellationToken);
+                    await QueueTransferAsync(dbContext, transferRule: rule, remotePath: entry.RemotePath, downloadId: null, totalBytes: entry.SizeBytes, cancellationToken);
                 }
+            }
+
+            var queuedTransfers = await dbContext.RemoteTransfers
+                .Where(transfer => transfer.Status == TransferStatus.Queued)
+                .OrderBy(transfer => transfer.CreatedAt)
+                .Take(3)
+                .ToListAsync(cancellationToken);
+
+            foreach (var transfer in queuedTransfers)
+            {
+                var transferRule = FindTransferRule(autoDownload, transfer.RemotePath);
+                if (transferRule is null)
+                {
+                    transfer.Status = TransferStatus.Skipped;
+                    transfer.Message = "No auto-download transfer rule matched this path.";
+                    transfer.CompletedAt = DateTimeOffset.UtcNow;
+                    continue;
+                }
+
+                await DownloadAsync(dbContext, transferClient, autoDownload, transferRule, transfer, cancellationToken);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -97,26 +117,29 @@ public sealed class AutoDownloadHostedService(
         IRemoteFileTransferClient transferClient,
         AutoDownloadConnectionSettings autoDownload,
         TransferRuleSettings transferRule,
-        string remotePath,
-        Guid? downloadId,
+        RemoteTransfer transfer,
         CancellationToken cancellationToken)
     {
-        var transfer = new RemoteTransfer
-        {
-            DownloadId = downloadId,
-            Provider = "SFTP",
-            RemotePath = remotePath,
-            LocalPath = transferRule.LocalPath,
-            Status = TransferStatus.Running,
-            StartedAt = DateTimeOffset.UtcNow
-        };
-
-        dbContext.RemoteTransfers.Add(transfer);
+        transfer.LocalPath = transferRule.LocalPath;
+        transfer.Status = TransferStatus.Running;
+        transfer.StartedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
 
         try
         {
-            var result = await transferClient.DownloadAsync(remotePath, transferRule.LocalPath, cancellationToken);
+            if (transfer.TotalBytes == 0)
+            {
+                transfer.TotalBytes = await transferClient.GetSizeAsync(transfer.RemotePath, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            var progress = new InlineProgress<long>(bytes =>
+            {
+                transfer.BytesTransferred += bytes;
+                dbContext.SaveChanges();
+            });
+
+            var result = await transferClient.DownloadAsync(transfer.RemotePath, transferRule.LocalPath, progress, cancellationToken);
             transfer.BytesTransferred = result.BytesTransferred;
             transfer.LocalPath = result.LocalPath;
             transfer.Status = result.Skipped ? TransferStatus.Skipped : TransferStatus.Completed;
@@ -188,7 +211,43 @@ public sealed class AutoDownloadHostedService(
             return;
         }
 
-        await DownloadAsync(dbContext, transferClient, autoDownload, transferRule, remotePath, downloadId, cancellationToken);
+        var totalBytes = await transferClient.GetSizeAsync(remotePath, cancellationToken);
+        var transfer = await QueueTransferAsync(dbContext, transferRule, remotePath, downloadId, totalBytes, cancellationToken);
+        await DownloadAsync(dbContext, transferClient, autoDownload, transferRule, transfer, cancellationToken);
+    }
+
+    private static async Task<RemoteTransfer> QueueTransferAsync(
+        FlowarrDbContext dbContext,
+        TransferRuleSettings transferRule,
+        string remotePath,
+        Guid? downloadId,
+        long totalBytes,
+        CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.RemoteTransfers.FirstOrDefaultAsync(transfer =>
+            transfer.RemotePath == remotePath &&
+            (transfer.Status == TransferStatus.Queued || transfer.Status == TransferStatus.Running || transfer.Status == TransferStatus.Completed || transfer.Status == TransferStatus.Skipped),
+            cancellationToken);
+
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var transfer = new RemoteTransfer
+        {
+            DownloadId = downloadId,
+            Provider = "SFTP",
+            RemotePath = remotePath,
+            LocalPath = transferRule.LocalPath,
+            TotalBytes = totalBytes,
+            Status = TransferStatus.Queued,
+            Message = "Queued by auto-download scan."
+        };
+
+        dbContext.RemoteTransfers.Add(transfer);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return transfer;
     }
 
     private static TransferRuleSettings? FindTransferRule(AutoDownloadConnectionSettings settings, string remotePath)
@@ -251,5 +310,13 @@ public sealed class AutoDownloadHostedService(
     private static string GetRuleRootLabel(TransferRuleSettings rule)
     {
         return string.IsNullOrWhiteSpace(rule.SourceRootPath) ? rule.SourceRootKind : rule.SourceRootPath;
+    }
+
+    private sealed class InlineProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value)
+        {
+            handler(value);
+        }
     }
 }

@@ -117,6 +117,7 @@ public partial class ProductionBaseline : Migration
                 "RemotePath" text NOT NULL,
                 "LocalPath" text NOT NULL,
                 "BytesTransferred" bigint NOT NULL,
+                "TotalBytes" bigint NOT NULL DEFAULT 0,
                 "Status" integer NOT NULL,
                 "Message" text NULL,
                 "CreatedAt" timestamp with time zone NOT NULL,
@@ -142,6 +143,7 @@ public partial class ProductionBaseline : Migration
             CREATE INDEX IF NOT EXISTS "IX_MediaFiles_MediaItemId" ON "MediaFiles" ("MediaItemId");
             CREATE INDEX IF NOT EXISTS "IX_CleanupCandidates_DownloadId" ON "CleanupCandidates" ("DownloadId");
             CREATE INDEX IF NOT EXISTS "IX_CleanupCandidates_MediaFileId" ON "CleanupCandidates" ("MediaFileId");
+            ALTER TABLE "RemoteTransfers" ADD COLUMN IF NOT EXISTS "TotalBytes" bigint NOT NULL DEFAULT 0;
 
             DELETE FROM "Downloads"
             WHERE "Client" = 'qBittorrent'
