@@ -412,7 +412,8 @@ public sealed record TransferRuleSettings(
     string RemotePathPrefix,
     string LocalPath,
     string SourceRootKind = "Download",
-    string SourceRootPath = "");
+    string SourceRootPath = "",
+    bool DeleteRemoteAfterDownload = false);
 
 public sealed record SeedboxRootSettings(
     bool Enabled,

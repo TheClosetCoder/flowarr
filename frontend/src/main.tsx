@@ -27,7 +27,7 @@ type ConnectionTestResult = { ok: boolean; message: string };
 type LocalMediaPath = { id?: string; enabled: boolean; name: string; path: string; role: string };
 type SeedboxRoot = { id?: string; enabled: boolean; name: string; kind: "Download" | "Media"; path: string };
 type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
-type TransferRule = { id?: string; enabled: boolean; name: string; remotePathPrefix: string; localPath: string; sourceRootKind: "Download" | "Media"; sourceRootPath: string };
+type TransferRule = { id?: string; enabled: boolean; name: string; remotePathPrefix: string; localPath: string; sourceRootKind: "Download" | "Media"; sourceRootPath: string; deleteRemoteAfterDownload: boolean };
 type ArrSettings = { enabled: boolean; baseUrl: string; hasApiKey: boolean };
 type AuthStatus = { setupComplete: boolean; authenticated: boolean };
 type JobRun = { id: string; jobType: string; status: string; startedAt: string; completedAt?: string; errorMessage?: string };
@@ -273,7 +273,7 @@ function normalizeAutoDownload(autoDownload: Partial<ConnectionSettings["autoDow
     overwriteExisting: autoDownload?.overwriteExisting ?? false,
     allowedExtensions: autoDownload?.allowedExtensions ?? [".mkv", ".mp4", ".avi", ".mov", ".m4v", ".srt"],
     localMediaPaths: (autoDownload?.localMediaPaths ?? []).map((path) => ({ ...path, id: path.id ?? createClientId() })),
-    transferRules: (autoDownload?.transferRules ?? []).map((rule) => ({ ...rule, sourceRootKind: rule.sourceRootKind ?? "Download", sourceRootPath: rule.sourceRootPath ?? "", id: rule.id ?? createClientId() }))
+    transferRules: (autoDownload?.transferRules ?? []).map((rule) => ({ ...rule, sourceRootKind: rule.sourceRootKind ?? "Download", sourceRootPath: rule.sourceRootPath ?? "", deleteRemoteAfterDownload: rule.deleteRemoteAfterDownload ?? false, id: rule.id ?? createClientId() }))
   };
 }
 
@@ -559,7 +559,8 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
         remotePathPrefix: rule.remotePathPrefix || "",
         localPath: rule.localPath || autoDownload.localImportPath || "/media/import",
         sourceRootKind: rule.sourceRootKind || "Download",
-        sourceRootPath: rule.sourceRootPath || ""
+        sourceRootPath: rule.sourceRootPath || "",
+        deleteRemoteAfterDownload: rule.deleteRemoteAfterDownload || false
       }))
     });
     await onSaved();
@@ -792,7 +793,7 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
             <button
               onClick={() => setAutoDownload({
                 ...autoDownload,
-                transferRules: [...autoDownload.transferRules, { id: createClientId(), enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localMediaPaths[0]?.path || autoDownload.localImportPath || "/media/import", sourceRootKind: defaultSourceRoot?.kind ?? "Download", sourceRootPath: defaultSourceRoot?.path ?? "" }]
+                transferRules: [...autoDownload.transferRules, { id: createClientId(), enabled: true, name: "New rule", remotePathPrefix: "", localPath: autoDownload.localMediaPaths[0]?.path || autoDownload.localImportPath || "/media/import", sourceRootKind: defaultSourceRoot?.kind ?? "Download", sourceRootPath: defaultSourceRoot?.path ?? "", deleteRemoteAfterDownload: false }]
               })}
               className="rounded border border-line px-3 py-1 text-sm"
             >
@@ -824,6 +825,14 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
                 placeholder={rule.sourceRootPath ? "optional subfolder" : "/downloads/movies"}
               />
               <LocalPathInput label="Local destination" value={rule.localPath} onChange={(value) => updateTransferRule(index, { localPath: value })} placeholder="/media/Movies" />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={rule.deleteRemoteAfterDownload}
+                  onChange={(event) => updateTransferRule(index, { deleteRemoteAfterDownload: event.target.checked })}
+                />
+                Delete remote after download
+              </label>
               <button
                 onClick={() => setAutoDownload({ ...autoDownload, transferRules: autoDownload.transferRules.filter((_, ruleIndex) => ruleIndex !== index) })}
                 className="self-end rounded border border-line px-3 py-2 text-sm"

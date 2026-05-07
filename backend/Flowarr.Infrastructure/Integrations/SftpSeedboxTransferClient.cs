@@ -122,6 +122,35 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
         }, cancellationToken);
     }
 
+    public async Task DeleteAsync(string remotePath, CancellationToken cancellationToken = default)
+    {
+        _seedbox = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
+        if (!await IsConfiguredAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("SFTP seedbox is not configured.");
+        }
+
+        await Task.Run(() =>
+        {
+            using var client = CreateClient();
+            client.Connect();
+            var normalizedRemotePath = NormalizeRemotePath(remotePath);
+            if (!IsWithinConfiguredRoots(normalizedRemotePath))
+            {
+                throw new InvalidOperationException("Remote path is outside configured seedbox roots.");
+            }
+
+            if (!client.Exists(normalizedRemotePath))
+            {
+                client.Disconnect();
+                return;
+            }
+
+            DeleteEntry(client, normalizedRemotePath, cancellationToken);
+            client.Disconnect();
+        }, cancellationToken);
+    }
+
     private SftpClient CreateClient()
     {
         var seedbox = _seedbox ?? throw new InvalidOperationException("SFTP seedbox settings were not loaded.");
@@ -232,5 +261,28 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
         }
 
         return total;
+    }
+
+    private void DeleteEntry(SftpClient client, string remotePath, CancellationToken cancellationToken)
+    {
+        var attributes = client.GetAttributes(remotePath);
+        if (!attributes.IsDirectory)
+        {
+            client.DeleteFile(remotePath);
+            return;
+        }
+
+        foreach (var entry in client.ListDirectory(remotePath))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (entry.Name is "." or "..")
+            {
+                continue;
+            }
+
+            DeleteEntry(client, entry.FullName, cancellationToken);
+        }
+
+        client.DeleteDirectory(remotePath);
     }
 }

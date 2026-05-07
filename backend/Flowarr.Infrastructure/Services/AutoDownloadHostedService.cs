@@ -156,6 +156,36 @@ public sealed class AutoDownloadHostedService(
                 DryRun = false,
                 Details = $"{result.Message} Bytes transferred: {result.BytesTransferred}."
             });
+
+            if (!result.Skipped && transferRule.DeleteRemoteAfterDownload)
+            {
+                dbContext.AuditLogs.Add(new AuditLog
+                {
+                    Action = "remote.delete.requested",
+                    TargetType = nameof(RemoteTransfer),
+                    TargetId = transfer.Id,
+                    Path = result.RemotePath,
+                    Actor = "auto-download",
+                    DryRun = false,
+                    Details = "Remote delete requested by download folder rule after successful download."
+                });
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                await transferClient.DeleteAsync(result.RemotePath, cancellationToken);
+
+                dbContext.AuditLogs.Add(new AuditLog
+                {
+                    Action = "remote.delete.completed",
+                    TargetType = nameof(RemoteTransfer),
+                    TargetId = transfer.Id,
+                    Path = result.RemotePath,
+                    Actor = "auto-download",
+                    DryRun = false,
+                    Details = "Remote path deleted after successful download."
+                });
+
+                transfer.Message = $"{transfer.Message} Remote source deleted.";
+            }
         }
         catch (Exception ex)
         {
