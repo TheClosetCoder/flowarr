@@ -54,31 +54,18 @@ public sealed class AutoDownloadHostedService(
 
             foreach (var download in downloads)
             {
-                var alreadyHandled = await dbContext.RemoteTransfers.AnyAsync(transfer =>
-                    transfer.RemotePath == download.RemotePath &&
-                    (transfer.Status == TransferStatus.Completed || transfer.Status == TransferStatus.Running || transfer.Status == TransferStatus.Skipped),
-                    cancellationToken);
+                await TryDownloadAsync(dbContext, transferClient, connectionSettings, autoDownload, download.RemotePath!, download.Id, cancellationToken);
+            }
 
-                if (alreadyHandled)
-                {
-                    continue;
-                }
+            var importedFiles = await dbContext.MediaFiles
+                .Where(file => file.ImportedLocally && file.ExistsOnSeedbox && !string.IsNullOrWhiteSpace(file.RemotePath))
+                .OrderByDescending(file => file.LastSeenAt)
+                .Take(25)
+                .ToListAsync(cancellationToken);
 
-                var transferRule = FindTransferRule(autoDownload, download.RemotePath!);
-                if (transferRule is null)
-                {
-                    logger.LogInformation("No auto-download transfer rule matched {RemotePath}", download.RemotePath);
-                    continue;
-                }
-
-                var seedbox = await connectionSettings.GetSftpSeedboxAsync(cancellationToken);
-                if (!IsAllowedSourcePath(seedbox, transferRule, download.RemotePath!))
-                {
-                    logger.LogWarning("Skipping {RemotePath}; it is outside configured seedbox root {RootPath}.", download.RemotePath, GetRuleRootLabel(transferRule));
-                    continue;
-                }
-
-                await DownloadAsync(dbContext, transferClient, autoDownload, transferRule, download, cancellationToken);
+            foreach (var file in importedFiles)
+            {
+                await TryDownloadAsync(dbContext, transferClient, connectionSettings, autoDownload, file.RemotePath!, null, cancellationToken);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -95,14 +82,15 @@ public sealed class AutoDownloadHostedService(
         IRemoteFileTransferClient transferClient,
         AutoDownloadConnectionSettings autoDownload,
         TransferRuleSettings transferRule,
-        Download download,
+        string remotePath,
+        Guid? downloadId,
         CancellationToken cancellationToken)
     {
         var transfer = new RemoteTransfer
         {
-            DownloadId = download.Id,
+            DownloadId = downloadId,
             Provider = "SFTP",
-            RemotePath = download.RemotePath!,
+            RemotePath = remotePath,
             LocalPath = transferRule.LocalPath,
             Status = TransferStatus.Running,
             StartedAt = DateTimeOffset.UtcNow
@@ -113,7 +101,7 @@ public sealed class AutoDownloadHostedService(
 
         try
         {
-            var result = await transferClient.DownloadAsync(download.RemotePath!, transferRule.LocalPath, cancellationToken);
+            var result = await transferClient.DownloadAsync(remotePath, transferRule.LocalPath, cancellationToken);
             transfer.BytesTransferred = result.BytesTransferred;
             transfer.LocalPath = result.LocalPath;
             transfer.Status = result.Skipped ? TransferStatus.Skipped : TransferStatus.Completed;
@@ -150,6 +138,42 @@ public sealed class AutoDownloadHostedService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task TryDownloadAsync(
+        FlowarrDbContext dbContext,
+        IRemoteFileTransferClient transferClient,
+        IConnectionSettingsService connectionSettings,
+        AutoDownloadConnectionSettings autoDownload,
+        string remotePath,
+        Guid? downloadId,
+        CancellationToken cancellationToken)
+    {
+        var alreadyHandled = await dbContext.RemoteTransfers.AnyAsync(transfer =>
+            transfer.RemotePath == remotePath &&
+            (transfer.Status == TransferStatus.Completed || transfer.Status == TransferStatus.Running || transfer.Status == TransferStatus.Skipped),
+            cancellationToken);
+
+        if (alreadyHandled)
+        {
+            return;
+        }
+
+        var transferRule = FindTransferRule(autoDownload, remotePath);
+        if (transferRule is null)
+        {
+            logger.LogInformation("No auto-download transfer rule matched {RemotePath}", remotePath);
+            return;
+        }
+
+        var seedbox = await connectionSettings.GetSftpSeedboxAsync(cancellationToken);
+        if (!IsAllowedSourcePath(seedbox, transferRule, remotePath))
+        {
+            logger.LogWarning("Skipping {RemotePath}; it is outside configured seedbox root {RootPath}.", remotePath, GetRuleRootLabel(transferRule));
+            return;
+        }
+
+        await DownloadAsync(dbContext, transferClient, autoDownload, transferRule, remotePath, downloadId, cancellationToken);
     }
 
     private static TransferRuleSettings? FindTransferRule(AutoDownloadConnectionSettings settings, string remotePath)

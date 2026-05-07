@@ -46,6 +46,17 @@ type RawConnectionSettings = Partial<ConnectionSettings> & {
 };
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
+const pageSlugs: Record<string, string> = {
+  Dashboard: "dashboard",
+  Connections: "connections",
+  Storage: "storage",
+  Downloads: "downloads",
+  Transfers: "transfers",
+  Cleanup: "cleanup",
+  Settings: "settings"
+};
+const pageBySlug = Object.fromEntries(Object.entries(pageSlugs).map(([page, slug]) => [slug, page]));
+const connectionTabs = ["torrent", "sftp", "services", "plex", "jellyfin"];
 
 function formatBytes(value: number) {
   if (!value) return "0 B";
@@ -54,9 +65,28 @@ function formatBytes(value: number) {
   return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
+function getRouteFromHash() {
+  const [pageSlug = "dashboard", tabSlug = "torrent"] = window.location.hash.replace(/^#\/?/, "").split("/");
+  const page = pageBySlug[pageSlug.toLowerCase()] ?? "Dashboard";
+  const connectionTab = connectionTabs.includes(tabSlug?.toLowerCase()) ? tabSlug.toLowerCase() : "torrent";
+  return { page, connectionTab };
+}
+
+function navigateToPage(page: string, currentConnectionTab: string) {
+  const pageSlug = pageSlugs[page] ?? "dashboard";
+  const tab = page === "Connections" ? `/${currentConnectionTab}` : "";
+  window.location.hash = `${pageSlug}${tab}`;
+}
+
+function navigateToConnectionTab(tab: string) {
+  window.location.hash = `connections/${tab}`;
+}
+
 function App() {
   const [auth, setAuth] = React.useState<AuthStatus | null>(null);
-  const [activePage, setActivePage] = React.useState("Dashboard");
+  const initialRoute = getRouteFromHash();
+  const [activePage, setActivePage] = React.useState(initialRoute.page);
+  const [connectionTab, setConnectionTab] = React.useState(initialRoute.connectionTab);
   const [dashboard, setDashboard] = React.useState<DashboardSummary | null>(null);
   const [downloads, setDownloads] = React.useState<DownloadItem[]>([]);
   const [storage, setStorage] = React.useState<StorageLocation[]>([]);
@@ -103,6 +133,16 @@ function App() {
     ]);
   }, [auth?.authenticated, refreshSettings]);
 
+  React.useEffect(() => {
+    const onHashChange = () => {
+      const route = getRouteFromHash();
+      setActivePage(route.page);
+      setConnectionTab(route.connectionTab);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
   if (!auth) {
     return <div className="grid min-h-screen place-items-center bg-[#eef1ec] text-sm text-slate-600">Loading Flowarr...</div>;
   }
@@ -137,7 +177,7 @@ function App() {
           {pages.map((page) => (
             <button
               key={page.name}
-              onClick={() => setActivePage(page.name)}
+              onClick={() => navigateToPage(page.name, connectionTab)}
               className={`flex w-full items-center gap-3 rounded px-3 py-2 text-left text-sm transition ${
                 activePage === page.name ? "bg-accent text-white" : "hover:bg-panel"
               }`}
@@ -171,7 +211,7 @@ function App() {
                 <button
                   key={page.name}
                   title={page.name}
-                  onClick={() => setActivePage(page.name)}
+                  onClick={() => navigateToPage(page.name, connectionTab)}
                   className={`grid h-10 w-10 place-items-center rounded ${activePage === page.name ? "bg-accent text-white" : ""}`}
                 >
                   <page.icon size={18} />
@@ -181,7 +221,7 @@ function App() {
           </div>
 
           {activePage === "Dashboard" && <Dashboard dashboard={dashboard} />}
-          {activePage === "Connections" && <Connections settings={connectionSettings} error={settingsError} onSaved={refreshSettings} />}
+          {activePage === "Connections" && <Connections settings={connectionSettings} error={settingsError} activeTab={connectionTab} onTabChange={setConnectionTab} onSaved={refreshSettings} />}
           {activePage === "Storage" && <Storage storage={storage} setStorage={setStorage} />}
           {activePage === "Downloads" && <Downloads downloads={downloads} />}
           {activePage === "Transfers" && <Transfers transfers={transfers} settings={transferSettings} />}
@@ -354,7 +394,19 @@ function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
   );
 }
 
-function Connections({ settings, error, onSaved }: { settings: ConnectionSettings | null; error: string; onSaved: () => Promise<void> }) {
+function Connections({
+  settings,
+  error,
+  activeTab,
+  onTabChange,
+  onSaved
+}: {
+  settings: ConnectionSettings | null;
+  error: string;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  onSaved: () => Promise<void>;
+}) {
   if (!settings) {
     return (
       <div className="rounded border border-line bg-white p-4">
@@ -366,13 +418,12 @@ function Connections({ settings, error, onSaved }: { settings: ConnectionSetting
 
   return (
     <section className="space-y-4">
-      <ConnectionForms settings={settings} onSaved={onSaved} />
+      <ConnectionForms settings={settings} activeTab={activeTab} onTabChange={onTabChange} onSaved={onSaved} />
     </section>
   );
 }
 
-function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; onSaved: () => Promise<void> }) {
-  const [activeTab, setActiveTab] = React.useState("torrent");
+function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settings: ConnectionSettings; activeTab: string; onTabChange: (tab: string) => void; onSaved: () => Promise<void> }) {
   const [qbittorrent, setQbittorrent] = React.useState({ ...settings.qbittorrent, password: "", clearPassword: false });
   const [sftpSeedbox, setSftpSeedbox] = React.useState({ ...settings.sftpSeedbox, seedboxRoots: settings.sftpSeedbox.seedboxRoots.map((root) => ({ ...root, id: root.id ?? createClientId() })), password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
   const [autoDownload, setAutoDownload] = React.useState({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
@@ -518,7 +569,10 @@ function ConnectionForms({ settings, onSaved }: { settings: ConnectionSettings; 
     <div className="space-y-4">
       <ConnectionTabs
         activeTab={activeTab}
-        onChange={setActiveTab}
+        onChange={(tab) => {
+          onTabChange(tab);
+          navigateToConnectionTab(tab);
+        }}
         tabs={[
           { id: "torrent", label: "Torrent Client" },
           { id: "sftp", label: "SFTP" },

@@ -50,7 +50,7 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
             Directory.CreateDirectory(localRootPath);
             var attributes = client.GetAttributes(normalizedRemotePath);
             var bytes = attributes.IsDirectory
-                ? DownloadDirectory(client, normalizedRemotePath, localRootPath, false, cancellationToken)
+                ? DownloadDirectory(client, normalizedRemotePath, localRootPath, true, cancellationToken)
                 : DownloadFile(client, normalizedRemotePath, localRootPath, cancellationToken);
 
             client.Disconnect();
