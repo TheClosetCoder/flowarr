@@ -37,10 +37,7 @@ public sealed class LocalStorageScanner(
         }
 
         var used = EnumerateLocalBytes(path);
-        var root = Path.GetPathRoot(Path.GetFullPath(path));
-        var drive = string.IsNullOrWhiteSpace(root) ? null : new DriveInfo(root);
-
-        return new StorageSnapshot(name, StorageKind.Local, path, used, drive?.AvailableFreeSpace ?? 0);
+        return new StorageSnapshot(name, StorageKind.Local, path, used, MountLookup.GetAvailableFreeSpace(path));
     }
 
     private static long EnumerateLocalBytes(string path)
@@ -246,9 +243,63 @@ public sealed class SeedboxStorageScanner(
                 }
             })
             .Sum();
-        var root = Path.GetPathRoot(Path.GetFullPath(path));
-        var drive = string.IsNullOrWhiteSpace(root) ? null : new DriveInfo(root);
 
-        return new StorageSnapshot(name, StorageKind.Seedbox, path, used, drive?.AvailableFreeSpace ?? 0);
+        return new StorageSnapshot(name, StorageKind.Seedbox, path, used, MountLookup.GetAvailableFreeSpace(path));
+    }
+}
+
+/// <summary>
+/// Path.GetPathRoot always resolves to "/" for any absolute Unix path, so a naive
+/// new DriveInfo(Path.GetPathRoot(path)) always reports the container's root filesystem
+/// free space, not the free space of whatever bind mount actually backs the given path
+/// (e.g. /media). This finds the most specific mounted filesystem containing the path instead.
+/// </summary>
+internal static class MountLookup
+{
+    public static long GetAvailableFreeSpace(string path)
+    {
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(path).TrimEnd('/');
+        }
+        catch
+        {
+            return 0;
+        }
+
+        DriveInfo[] drives;
+        try
+        {
+            drives = DriveInfo.GetDrives();
+        }
+        catch
+        {
+            return 0;
+        }
+
+        var candidates = drives
+            .Where(drive =>
+            {
+                var mount = drive.Name.TrimEnd('/');
+                return fullPath.Equals(mount, StringComparison.Ordinal) ||
+                       fullPath.StartsWith(mount + "/", StringComparison.Ordinal) ||
+                       mount.Length == 0;
+            })
+            .OrderByDescending(drive => drive.Name.Length);
+
+        foreach (var drive in candidates)
+        {
+            try
+            {
+                return drive.AvailableFreeSpace;
+            }
+            catch
+            {
+                // Some virtual filesystems (proc, sysfs, etc.) aren't queryable; try the next-best match.
+            }
+        }
+
+        return 0;
     }
 }
