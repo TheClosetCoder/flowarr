@@ -228,9 +228,18 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
 
         Directory.CreateDirectory(localDirectory);
         var localPath = Path.Combine(localDirectory, Path.GetFileName(remotePath));
-        if (File.Exists(localPath) && !autoDownload.OverwriteExisting)
+        if (File.Exists(localPath))
         {
-            return 0;
+            var localSize = new FileInfo(localPath).Length;
+            var remoteSize = client.GetAttributes(remotePath).Size;
+            if (localSize == remoteSize && !autoDownload.OverwriteExisting)
+            {
+                return 0;
+            }
+
+            // A local file that doesn't match the remote size is a partial/corrupt leftover from
+            // an interrupted download (e.g. a restart mid-transfer), not something to leave alone -
+            // fall through and re-download it even though OverwriteExisting is off.
         }
 
         cancellationToken.ThrowIfCancellationRequested();
