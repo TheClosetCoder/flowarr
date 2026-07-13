@@ -45,10 +45,25 @@ public sealed class DashboardController(
         var recentImports = mediaImports
             .Concat(completedTransfers.Select(transfer => new RecentImport(
                 transfer.Id,
-                GetImportTitle(transfer),
+                GetDisplayTitle(transfer.RemotePath, transfer.LocalPath),
                 transfer.CompletedAt ?? transfer.CreatedAt)))
             .OrderByDescending(import => import.ImportedAt)
             .Take(5)
+            .ToList();
+
+        var activeTransferRows = await dbContext.RemoteTransfers
+            .Where(transfer => transfer.Status == TransferStatus.Queued || transfer.Status == TransferStatus.Running)
+            .OrderBy(transfer => transfer.CreatedAt)
+            .Take(10)
+            .ToListAsync(cancellationToken);
+        var activeTransfers = activeTransferRows
+            .Select(transfer => new ActiveTransferSummary(
+                transfer.Id,
+                GetDisplayTitle(transfer.RemotePath, transfer.LocalPath),
+                transfer.Status.ToString(),
+                transfer.BytesTransferred,
+                transfer.TotalBytes,
+                transfer.CreatedAt))
             .ToList();
 
         var cleanupCandidates = await dbContext.CleanupCandidates
@@ -88,19 +103,23 @@ public sealed class DashboardController(
                 download.Progress,
                 download.SizeBytes,
                 download.RemotePath,
-                download.UpdatedAt)).ToList());
+                download.UpdatedAt)).ToList(),
+            activeTransfers);
     }
 
-    private static string GetImportTitle(RemoteTransfer transfer)
+    private static string GetDisplayTitle(string remotePath, string localPath)
     {
-        var localName = Path.GetFileName(transfer.LocalPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        if (!string.IsNullOrWhiteSpace(localName))
+        // RemotePath is the actual per-item seedbox folder (e.g. ".../Movies/Project Hail Mary (2026)"),
+        // while LocalPath is often just the rule's shared destination folder (e.g. "/media/Movies") and
+        // gives the same generic name for every item downloaded through that rule.
+        var remoteName = Path.GetFileName(remotePath.TrimEnd('/'));
+        if (!string.IsNullOrWhiteSpace(remoteName))
         {
-            return localName;
+            return remoteName;
         }
 
-        var remoteName = Path.GetFileName(transfer.RemotePath.TrimEnd('/'));
-        return string.IsNullOrWhiteSpace(remoteName) ? transfer.RemotePath : remoteName;
+        var localName = Path.GetFileName(localPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return string.IsNullOrWhiteSpace(localName) ? remotePath : localName;
     }
 
     private async Task RefreshDashboardSourcesAsync(CancellationToken cancellationToken)

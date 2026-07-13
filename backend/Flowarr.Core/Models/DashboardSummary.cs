@@ -7,11 +7,20 @@ public sealed record DashboardSummary(
     IReadOnlyCollection<RecentImport> RecentImports,
     IReadOnlyCollection<CleanupCandidateSummary> CleanupCandidates,
     IReadOnlyCollection<StorageLocationSummary> StorageLocations,
-    IReadOnlyCollection<DownloadSummary> Downloads);
+    IReadOnlyCollection<DownloadSummary> Downloads,
+    IReadOnlyCollection<ActiveTransferSummary> ActiveTransfers);
 
 public sealed record StorageSummary(long UsedBytes, long FreeBytes);
 
 public sealed record RecentImport(Guid MediaItemId, string Title, DateTimeOffset ImportedAt);
+
+public sealed record ActiveTransferSummary(
+    Guid Id,
+    string Title,
+    string Status,
+    long BytesTransferred,
+    long TotalBytes,
+    DateTimeOffset CreatedAt);
 
 public sealed record CleanupCandidateSummary(Guid Id, string Path, long SizeBytes, string Reason, string Confidence, bool DryRun);
 

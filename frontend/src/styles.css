@@ -4,10 +4,30 @@
 
 html {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+
+body {
+  background-color: #0f1417;
+  color: #e6ebe9;
 }
 
 button:focus-visible,
 a:focus-visible {
-  outline: 2px solid #157a6e;
+  outline: 2px solid #1fae98;
   outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f1417;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a3338;
+  border-radius: 9999px;
 }
