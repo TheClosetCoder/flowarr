@@ -44,6 +44,24 @@ public sealed class AutoDownloadHostedService(
                 return;
             }
 
+            // A transfer can only be genuinely "Running" while this method's download loop below is
+            // awaiting it; since ExecuteAsync never overlaps RunOnceAsync calls, any Running row found
+            // here at the start of a cycle is orphaned from a process that died mid-download. Requeue it.
+            var orphanedTransfers = await dbContext.RemoteTransfers
+                .Where(transfer => transfer.Status == TransferStatus.Running)
+                .ToListAsync(cancellationToken);
+
+            foreach (var orphaned in orphanedTransfers)
+            {
+                orphaned.Status = TransferStatus.Queued;
+                orphaned.Message = "Requeued after restart; previous attempt did not complete.";
+            }
+
+            if (orphanedTransfers.Count > 0)
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
             var downloads = await dbContext.Downloads
                 .Where(download =>
                     !string.IsNullOrWhiteSpace(download.RemotePath) &&
