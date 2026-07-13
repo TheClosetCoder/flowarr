@@ -4,11 +4,11 @@ import { EmptyState } from "../components/EmptyState";
 import { Metric } from "../components/Metric";
 import { ActivityRow } from "../components/ActivityRow";
 import { StatusBadge } from "../components/StatusBadge";
-import { formatBytes, formatRelativeTime } from "../format";
-import type { DashboardSummary } from "../types";
+import { formatBytes, formatRelativeTime, getDisplayTitle, isTransferActive } from "../format";
+import type { DashboardSummary, RemoteTransfer } from "../types";
 
-export function Dashboard({ dashboard }: { dashboard: DashboardSummary | null }) {
-  const activeTransfers = dashboard?.activeTransfers ?? [];
+export function Dashboard({ dashboard, transfers }: { dashboard: DashboardSummary | null; transfers: RemoteTransfer[] }) {
+  const activeTransfers = transfers.filter(isTransferActive);
   const torrentDownloading = (dashboard?.downloads ?? []).filter((item) => item.status === "Downloading").length;
   const activeCount = activeTransfers.length + torrentDownloading;
 
@@ -28,7 +28,7 @@ export function Dashboard({ dashboard }: { dashboard: DashboardSummary | null })
             {activeTransfers.map((transfer) => (
               <ActivityRow
                 key={transfer.id}
-                title={transfer.title}
+                title={getDisplayTitle(transfer.remotePath, transfer.localPath)}
                 status={transfer.status}
                 bytesTransferred={transfer.bytesTransferred}
                 totalBytes={transfer.totalBytes}

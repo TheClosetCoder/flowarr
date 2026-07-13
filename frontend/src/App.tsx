@@ -97,15 +97,28 @@ export function App() {
       return;
     }
 
+    // Lightweight, DB-only query - safe to poll frequently for live progress bars.
     const timer = window.setInterval(() => {
       void fetchJson<RemoteTransfer[]>("/api/transfers").then(setTransfers);
-      if (activePage === "Dashboard") {
-        void fetchJson<DashboardSummary>("/api/dashboard").then(setDashboard);
-      }
     }, 2000);
 
     return () => window.clearInterval(timer);
   }, [activePage, auth?.authenticated, transfers]);
+
+  React.useEffect(() => {
+    if (!auth?.authenticated || activePage !== "Dashboard") {
+      return;
+    }
+
+    // /api/dashboard triggers a live SFTP + torrent client scan on every call, so it's refreshed
+    // on a much slower cadence than the transfer queue above - the Activity section gets its live
+    // progress from the /api/transfers poll instead.
+    const timer = window.setInterval(() => {
+      void fetchJson<DashboardSummary>("/api/dashboard").then(setDashboard);
+    }, 30000);
+
+    return () => window.clearInterval(timer);
+  }, [activePage, auth?.authenticated]);
 
   React.useEffect(() => {
     const onHashChange = () => {
@@ -146,7 +159,7 @@ export function App() {
             }}
           />
 
-          {activePage === "Dashboard" && <Dashboard dashboard={dashboard} />}
+          {activePage === "Dashboard" && <Dashboard dashboard={dashboard} transfers={transfers} />}
           {activePage === "Connections" && <Connections settings={connectionSettings} error={settingsError} activeTab={connectionTab} onTabChange={setConnectionTab} onSaved={refreshSettings} />}
           {activePage === "Storage" && <Storage storage={storage} setStorage={setStorage} />}
           {activePage === "Downloads" && <Downloads downloads={downloads} />}
