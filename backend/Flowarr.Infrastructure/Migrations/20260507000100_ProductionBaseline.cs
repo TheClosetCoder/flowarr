@@ -6,6 +6,9 @@ using Flowarr.Infrastructure.Data;
 
 namespace Flowarr.Infrastructure.Migrations;
 
+// Do not edit this migration's Up() once it has shipped: any environment that already applied
+// this migration ID has it recorded in __EFMigrationsHistory, so Migrate() will skip it forever
+// regardless of later edits to this file. Add a new migration instead.
 [DbContext(typeof(FlowarrDbContext))]
 [Migration("20260507000100_ProductionBaseline")]
 public partial class ProductionBaseline : Migration
