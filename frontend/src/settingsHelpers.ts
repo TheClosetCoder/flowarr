@@ -30,7 +30,8 @@ export function defaultConnectionSettings(): ConnectionSettings {
       remoteRootPath: "",
       seedboxRoots: [],
       hasPassword: false,
-      hasPrivateKeyPassphrase: false
+      hasPrivateKeyPassphrase: false,
+      accountQuotaBytes: 0
     },
     autoDownload: normalizeAutoDownload(undefined),
     radarr: { enabled: false, baseUrl: "", hasApiKey: false },

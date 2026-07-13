@@ -7,4 +7,5 @@ public sealed record StorageSnapshot(
     StorageKind Kind,
     string PathOrEndpoint,
     long UsedBytes,
-    long FreeBytes);
+    long FreeBytes,
+    StorageCategory Category);

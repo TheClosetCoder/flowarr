@@ -262,6 +262,13 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
             <Input label="Private key path" value={sftpSeedbox.privateKeyPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, privateKeyPath: value })} placeholder="/keys/id_rsa" />
             <Input label={sftpSeedbox.hasPrivateKeyPassphrase ? "Key passphrase (already saved)" : "Key passphrase"} type="password" value={sftpSeedbox.privateKeyPassphrase} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, privateKeyPassphrase: value })} />
             <Input label="Legacy remote root path" value={sftpSeedbox.remoteRootPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, remoteRootPath: value })} placeholder="/home/user/files" />
+            <Input
+              label="Account quota (GB)"
+              value={sftpSeedbox.accountQuotaBytes ? String(Math.round(sftpSeedbox.accountQuotaBytes / 1024 ** 3)) : ""}
+              onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, accountQuotaBytes: value.trim() ? Math.round(Number(value) * 1024 ** 3) : 0 })}
+              placeholder="e.g. 2000"
+            />
+            <p className="text-xs text-muted">Optional. Many seedbox providers report the whole shared server's disk as "free" over SFTP, not your actual allocation. Set your real quota here to see accurate remaining space instead.</p>
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <h4 className="text-sm font-medium text-ink">Seedbox roots</h4>

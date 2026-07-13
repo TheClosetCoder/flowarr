@@ -20,11 +20,13 @@ public static class DependencyInjection
             ?? "Host=localhost;Port=5432;Database=flowarr;Username=flowarr;Password=flowarr";
 
         services.AddDbContext<FlowarrDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddMemoryCache();
         services.AddScoped<IAdminAuthService, AdminAuthService>();
         services.AddScoped<IJobRunService, JobRunService>();
         services.AddScoped<IConnectionSettingsService, ConnectionSettingsService>();
         services.AddScoped<IConnectionTestService, ConnectionTestService>();
         services.AddScoped<ICleanupRecommendationService, CleanupRecommendationService>();
+        services.AddScoped<IStorageSyncService, StorageSyncService>();
         services.AddScoped<IDownloadClient, QBittorrentDownloadClient>();
         services.AddScoped<ArrMediaCatalogClient>();
         services.AddScoped<IMediaCatalogClient>(provider => provider.GetRequiredService<ArrMediaCatalogClient>());

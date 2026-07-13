@@ -232,7 +232,8 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
             string.IsNullOrWhiteSpace(request.RemoteRootPath) ? saved.RemoteRootPath : request.RemoteRootPath,
             request.SeedboxRoots ?? saved.SeedboxRoots,
             !string.IsNullOrWhiteSpace(request.Password) || (!request.ClearPassword && saved.HasPassword),
-            !string.IsNullOrWhiteSpace(request.PrivateKeyPassphrase) || (!request.ClearPrivateKeyPassphrase && saved.HasPrivateKeyPassphrase));
+            !string.IsNullOrWhiteSpace(request.PrivateKeyPassphrase) || (!request.ClearPrivateKeyPassphrase && saved.HasPrivateKeyPassphrase),
+            request.AccountQuotaBytes <= 0 ? saved.AccountQuotaBytes : request.AccountQuotaBytes);
     }
 
     private static SftpClient CreateSftpClient(SftpSeedboxConnectionSettings settings)

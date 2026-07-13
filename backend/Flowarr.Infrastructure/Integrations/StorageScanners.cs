@@ -2,6 +2,7 @@ using Flowarr.Core.Enums;
 using Flowarr.Core.Integrations;
 using Flowarr.Infrastructure.Options;
 using Flowarr.Infrastructure.Services;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Renci.SshNet;
 using Renci.SshNet.Sftp;
@@ -17,27 +18,27 @@ public sealed class LocalStorageScanner(
         var autoDownload = await connectionSettingsService.GetAutoDownloadAsync(cancellationToken);
         var paths = autoDownload.LocalMediaPaths
             .Where(path => path.Enabled && !string.IsNullOrWhiteSpace(path.Path))
-            .Select(path => new { Name = $"Local: {path.Name}", Path = path.Path })
+            .Select(path => new { Name = $"Local: {path.Name}", Path = path.Path, Category = StorageCategory.Monitored })
             .Concat(autoDownload.TransferRules
                 .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.LocalPath))
-                .Select(rule => new { Name = $"Local rule: {rule.Name}", Path = rule.LocalPath }))
-            .Concat([new { Name = "Local media", Path = options.Value.Storage.LocalPath }])
+                .Select(rule => new { Name = $"Local rule: {rule.Name}", Path = rule.LocalPath, Category = StorageCategory.Rule }))
+            .Concat([new { Name = "Local media", Path = options.Value.Storage.LocalPath, Category = StorageCategory.Monitored }])
             .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .ToList();
 
-        return paths.Select(item => BuildSnapshot(item.Name, item.Path)).ToList();
+        return paths.Select(item => BuildSnapshot(item.Name, item.Path, item.Category)).ToList();
     }
 
-    private static StorageSnapshot BuildSnapshot(string name, string path)
+    private static StorageSnapshot BuildSnapshot(string name, string path, StorageCategory category)
     {
         if (!Directory.Exists(path))
         {
-            return new StorageSnapshot(name, StorageKind.Local, path, 0, 0);
+            return new StorageSnapshot(name, StorageKind.Local, path, 0, 0, category);
         }
 
         var used = EnumerateLocalBytes(path);
-        return new StorageSnapshot(name, StorageKind.Local, path, used, MountLookup.GetAvailableFreeSpace(path));
+        return new StorageSnapshot(name, StorageKind.Local, path, used, MountLookup.GetAvailableFreeSpace(path), category);
     }
 
     private static long EnumerateLocalBytes(string path)
@@ -67,8 +68,12 @@ public sealed class LocalStorageScanner(
 
 public sealed class SeedboxStorageScanner(
     IConnectionSettingsService connectionSettingsService,
-    IOptions<IntegrationOptions> options) : IStorageScanner
+    IOptions<IntegrationOptions> options,
+    IMemoryCache cache) : IStorageScanner
 {
+    private const string AccountUsedBytesCacheKey = "seedbox-account-used-bytes";
+    private static readonly TimeSpan AccountUsageCacheDuration = TimeSpan.FromMinutes(15);
+
     public async Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(CancellationToken cancellationToken = default)
     {
         var seedbox = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
@@ -79,16 +84,16 @@ public sealed class SeedboxStorageScanner(
             var fallback = options.Value.Storage.SeedboxPathOrEndpoint;
             return Directory.Exists(fallback)
                 ? [BuildMountedSeedboxSnapshot("Seedbox mount", fallback)]
-                : [new StorageSnapshot("Seedbox", StorageKind.Seedbox, fallback, 0, 0)];
+                : [new StorageSnapshot("Seedbox", StorageKind.Seedbox, fallback, 0, 0, StorageCategory.Monitored)];
         }
 
         var configuredRoots = seedbox.SeedboxRoots
             .Where(root => root.Enabled && !string.IsNullOrWhiteSpace(root.Path))
-            .Select(root => new { Name = $"Seedbox {root.Kind}: {root.Name}", Path = root.Path })
+            .Select(root => new { Name = $"Seedbox {root.Kind}: {root.Name}", Path = root.Path, Category = StorageCategory.Monitored })
             .ToList();
         var remotePaths = autoDownload.TransferRules
             .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.RemotePathPrefix))
-            .Select(rule => new { Name = $"Seedbox rule: {rule.Name}", Path = NormalizeRemotePath(GetRootForRule(seedbox, rule), rule.RemotePathPrefix) })
+            .Select(rule => new { Name = $"Seedbox rule: {rule.Name}", Path = NormalizeRemotePath(GetRootForRule(seedbox, rule), rule.RemotePathPrefix), Category = StorageCategory.Rule })
             .Concat(configuredRoots)
             .Where(item => !string.IsNullOrWhiteSpace(item.Path))
             .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
@@ -97,7 +102,7 @@ public sealed class SeedboxStorageScanner(
 
         if (remotePaths.Count == 0)
         {
-            remotePaths.Add(new { Name = "Seedbox root", Path = seedbox.RemoteRootPath });
+            remotePaths.Add(new { Name = "Seedbox root", Path = seedbox.RemoteRootPath, Category = StorageCategory.Monitored });
         }
 
         return await Task.Run<IReadOnlyCollection<StorageSnapshot>>(() =>
@@ -106,15 +111,45 @@ public sealed class SeedboxStorageScanner(
             using var client = CreateClient(seedbox);
             client.Connect();
 
+            var accountFreeBytes = GetAccountFreeBytes(client, seedbox, cancellationToken);
+
             foreach (var remotePath in remotePaths)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                snapshots.Add(BuildSftpSnapshot(client, remotePath.Name, remotePath.Path, cancellationToken));
+                snapshots.Add(BuildSftpSnapshot(client, remotePath.Name, remotePath.Path, remotePath.Category, accountFreeBytes, cancellationToken));
             }
 
             client.Disconnect();
             return snapshots;
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// SFTP's statvfs response reports the whole shared host disk's free space, not the user's
+    /// actual account quota. When a quota is configured, this computes (and caches, since it
+    /// requires a full recursive scan of the account root) a single account-wide free-space
+    /// figure to use across every seedbox entry instead - the same shared-pool approach used for
+    /// local bind-mounted disks in MountLookup.
+    /// </summary>
+    private long? GetAccountFreeBytes(SftpClient client, SftpSeedboxConnectionSettings seedbox, CancellationToken cancellationToken)
+    {
+        if (seedbox.AccountQuotaBytes <= 0 || string.IsNullOrWhiteSpace(seedbox.RemoteRootPath))
+        {
+            return null;
+        }
+
+        if (!cache.TryGetValue(AccountUsedBytesCacheKey, out long accountUsedBytes))
+        {
+            if (!client.Exists(seedbox.RemoteRootPath))
+            {
+                return null;
+            }
+
+            accountUsedBytes = GetRemoteUsedBytes(client, seedbox.RemoteRootPath, cancellationToken);
+            cache.Set(AccountUsedBytesCacheKey, accountUsedBytes, AccountUsageCacheDuration);
+        }
+
+        return Math.Max(0, seedbox.AccountQuotaBytes - accountUsedBytes);
     }
 
     private static bool IsConfigured(SftpSeedboxConnectionSettings seedbox)
@@ -154,16 +189,18 @@ public sealed class SeedboxStorageScanner(
         SftpClient client,
         string name,
         string remotePath,
+        StorageCategory category,
+        long? accountFreeBytesOverride,
         CancellationToken cancellationToken)
     {
         if (!client.Exists(remotePath))
         {
-            return new StorageSnapshot(name, StorageKind.Seedbox, remotePath, 0, 0);
+            return new StorageSnapshot(name, StorageKind.Seedbox, remotePath, 0, 0, category);
         }
 
         var used = GetRemoteUsedBytes(client, remotePath, cancellationToken);
-        var free = GetRemoteFreeBytes(client, remotePath);
-        return new StorageSnapshot(name, StorageKind.Seedbox, remotePath, used, free);
+        var free = accountFreeBytesOverride ?? GetRemoteFreeBytes(client, remotePath);
+        return new StorageSnapshot(name, StorageKind.Seedbox, remotePath, used, free, category);
     }
 
     private static long GetRemoteUsedBytes(SftpClient client, string remotePath, CancellationToken cancellationToken)
@@ -244,7 +281,7 @@ public sealed class SeedboxStorageScanner(
             })
             .Sum();
 
-        return new StorageSnapshot(name, StorageKind.Seedbox, path, used, MountLookup.GetAvailableFreeSpace(path));
+        return new StorageSnapshot(name, StorageKind.Seedbox, path, used, MountLookup.GetAvailableFreeSpace(path), StorageCategory.Monitored);
     }
 }
 

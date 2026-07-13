@@ -75,7 +75,8 @@ public sealed class ConnectionSettingsService(
             Get(settings, "remoteRootPath", options.Value.SftpSeedbox.RemoteRootPath),
             GetSeedboxRoots(settings),
             !string.IsNullOrWhiteSpace(Get(secrets, "password", options.Value.SftpSeedbox.Password)),
-            !string.IsNullOrWhiteSpace(Get(secrets, "privateKeyPassphrase", string.Empty)));
+            !string.IsNullOrWhiteSpace(Get(secrets, "privateKeyPassphrase", string.Empty)),
+            GetLong(settings, "accountQuotaBytes", 0));
     }
 
     public async Task<AutoDownloadConnectionSettings> GetAutoDownloadAsync(CancellationToken cancellationToken = default)
@@ -161,7 +162,8 @@ public sealed class ConnectionSettingsService(
                 ["username"] = request.Username ?? string.Empty,
                 ["privateKeyPath"] = request.PrivateKeyPath ?? string.Empty,
                 ["remoteRootPath"] = request.RemoteRootPath ?? string.Empty,
-                ["seedboxRoots"] = JsonSerializer.Serialize(request.SeedboxRoots ?? [], JsonOptions)
+                ["seedboxRoots"] = JsonSerializer.Serialize(request.SeedboxRoots ?? [], JsonOptions),
+                ["accountQuotaBytes"] = request.AccountQuotaBytes.ToString()
             },
             secrets,
             cancellationToken);
@@ -307,6 +309,11 @@ public sealed class ConnectionSettingsService(
         return values.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) ? parsed : fallback;
     }
 
+    private static long GetLong(IReadOnlyDictionary<string, string?> values, string key, long fallback)
+    {
+        return values.TryGetValue(key, out var value) && long.TryParse(value, out var parsed) ? parsed : fallback;
+    }
+
     private static bool GetBool(IReadOnlyDictionary<string, string?> values, string key, bool fallback)
     {
         return values.TryGetValue(key, out var value) && bool.TryParse(value, out var parsed) ? parsed : fallback;
@@ -383,7 +390,8 @@ public sealed record SftpSeedboxConnectionSettings(
     string RemoteRootPath,
     SeedboxRootSettings[] SeedboxRoots,
     bool HasPassword,
-    bool HasPrivateKeyPassphrase);
+    bool HasPrivateKeyPassphrase,
+    long AccountQuotaBytes);
 
 public sealed record ArrConnectionSettings(
     bool Enabled,
@@ -440,7 +448,8 @@ public sealed record SaveSftpSeedboxConnectionRequest(
     string? PrivateKeyPassphrase,
     bool ClearPrivateKeyPassphrase,
     string? RemoteRootPath,
-    SeedboxRootSettings[]? SeedboxRoots);
+    SeedboxRootSettings[]? SeedboxRoots,
+    long AccountQuotaBytes);
 
 public sealed record SaveAutoDownloadConnectionRequest(
     bool Enabled,

@@ -1,6 +1,6 @@
-using Flowarr.Core.Entities;
 using Flowarr.Core.Integrations;
 using Flowarr.Infrastructure.Data;
+using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,7 +10,8 @@ namespace Flowarr.Api.Controllers;
 [Route("api/storage")]
 public sealed class StorageController(
     FlowarrDbContext dbContext,
-    IEnumerable<IStorageScanner> storageScanners) : ControllerBase
+    IEnumerable<IStorageScanner> storageScanners,
+    IStorageSyncService storageSyncService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -26,33 +27,7 @@ public sealed class StorageController(
     [HttpPost("scan")]
     public async Task<IActionResult> Scan(CancellationToken cancellationToken)
     {
-        foreach (var scanner in storageScanners)
-        {
-            var snapshots = await scanner.ScanAsync(cancellationToken);
-            foreach (var snapshot in snapshots)
-            {
-                var location = await dbContext.StorageLocations
-                    .FirstOrDefaultAsync(item => item.Kind == snapshot.Kind && item.Name == snapshot.Name, cancellationToken);
-
-                if (location is null)
-                {
-                    location = new StorageLocation
-                    {
-                        Id = Guid.NewGuid(),
-                        Kind = snapshot.Kind,
-                        Name = snapshot.Name
-                    };
-                    dbContext.StorageLocations.Add(location);
-                }
-
-                location.PathOrEndpoint = snapshot.PathOrEndpoint;
-                location.UsedBytes = snapshot.UsedBytes;
-                location.FreeBytes = snapshot.FreeBytes;
-                location.LastScannedAt = DateTimeOffset.UtcNow;
-            }
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await storageSyncService.SyncAsync(storageScanners, cancellationToken);
         return await Get(cancellationToken);
     }
 }

@@ -3,6 +3,7 @@ using Flowarr.Core.Entities;
 using Flowarr.Core.Integrations;
 using Flowarr.Core.Models;
 using Flowarr.Infrastructure.Data;
+using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,6 +15,7 @@ public sealed class DashboardController(
     FlowarrDbContext dbContext,
     IDownloadClient downloadClient,
     IEnumerable<IStorageScanner> storageScanners,
+    IStorageSyncService storageSyncService,
     ILogger<DashboardController> logger) : ControllerBase
 {
     [HttpGet]
@@ -135,7 +137,7 @@ public sealed class DashboardController(
 
         try
         {
-            await RefreshStorageAsync(cancellationToken);
+            await storageSyncService.SyncAsync(storageScanners, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -180,43 +182,4 @@ public sealed class DashboardController(
             : dbContext.Downloads.FirstOrDefaultAsync(download => download.Hash == snapshot.Hash, cancellationToken);
     }
 
-    private async Task RefreshStorageAsync(CancellationToken cancellationToken)
-    {
-        foreach (var scanner in storageScanners)
-        {
-            var snapshots = await scanner.ScanAsync(cancellationToken);
-            foreach (var snapshot in snapshots)
-            {
-                var location = await dbContext.StorageLocations
-                    .FirstOrDefaultAsync(item => item.Kind == snapshot.Kind && item.Name == snapshot.Name, cancellationToken);
-
-                if (location is null)
-                {
-                    location = new StorageLocation
-                    {
-                        Id = Guid.NewGuid(),
-                        Kind = snapshot.Kind,
-                        Name = snapshot.Name
-                    };
-                    dbContext.StorageLocations.Add(location);
-                }
-
-                location.PathOrEndpoint = snapshot.PathOrEndpoint;
-                location.UsedBytes = snapshot.UsedBytes;
-                location.FreeBytes = snapshot.FreeBytes;
-                location.LastScannedAt = DateTimeOffset.UtcNow;
-            }
-
-            // Remove rows this scanner no longer produces (renamed/removed roots and rules), so
-            // stale entries don't linger forever showing whatever value they had at the time.
-            foreach (var kindGroup in snapshots.GroupBy(snapshot => snapshot.Kind))
-            {
-                var currentNames = kindGroup.Select(snapshot => snapshot.Name).ToHashSet(StringComparer.Ordinal);
-                var staleLocations = await dbContext.StorageLocations
-                    .Where(item => item.Kind == kindGroup.Key && !currentNames.Contains(item.Name))
-                    .ToListAsync(cancellationToken);
-                dbContext.StorageLocations.RemoveRange(staleLocations);
-            }
-        }
-    }
 }

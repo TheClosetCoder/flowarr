@@ -23,7 +23,7 @@ export type CleanupCandidateSummary = { id: string; path: string; sizeBytes: num
 export type DashboardStorageLocation = { name: string; kind: string; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
 export type DashboardDownload = { id: string; client: string; name: string; status: string; progress: number; sizeBytes: number; remotePath?: string; updatedAt: string };
 export type DownloadItem = { id: string; name: string; client: string; status: string; progress: number; sizeBytes: number; remotePath?: string };
-export type StorageLocation = { id: string; name: string; kind: string | number; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
+export type StorageLocation = { id: string; name: string; kind: string | number; category: string; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
 export type RemoteTransfer = { id: string; provider: string; remotePath: string; localPath: string; bytesTransferred: number; totalBytes: number; status: string; message?: string; createdAt: string; completedAt?: string };
 export type LocalFolderListing = { currentPath: string; parentPath?: string; entries: LocalFolderEntry[] };
 export type LocalFolderEntry = { name: string; path: string };
@@ -37,7 +37,7 @@ export type AuthStatus = { setupComplete: boolean; authenticated: boolean };
 export type JobRun = { id: string; jobType: string; status: string; startedAt: string; completedAt?: string; errorMessage?: string };
 export type ConnectionSettings = {
   qbittorrent: { enabled: boolean; clientType: string; baseUrl: string; username: string; hasPassword: boolean };
-  sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; remoteRootPath: string; seedboxRoots: SeedboxRoot[]; hasPassword: boolean; hasPrivateKeyPassphrase: boolean };
+  sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; remoteRootPath: string; seedboxRoots: SeedboxRoot[]; hasPassword: boolean; hasPrivateKeyPassphrase: boolean; accountQuotaBytes: number };
   autoDownload: { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[] };
   radarr: ArrSettings;
   sonarr: ArrSettings;
