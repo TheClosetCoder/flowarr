@@ -79,7 +79,7 @@ public sealed class AutoDownloadHostedService(
                 var entries = await transferClient.ListAsync(sourcePath, cancellationToken);
                 foreach (var entry in entries.Take(100))
                 {
-                    await QueueTransferAsync(dbContext, transferRule: rule, remotePath: entry.RemotePath, downloadId: null, totalBytes: entry.SizeBytes, cancellationToken);
+                    await GetOrQueueTransferAsync(dbContext, transferRule: rule, remotePath: entry.RemotePath, downloadId: null, totalBytes: entry.SizeBytes, cancellationToken);
                 }
             }
 
@@ -217,16 +217,6 @@ public sealed class AutoDownloadHostedService(
         Guid? downloadId,
         CancellationToken cancellationToken)
     {
-        var alreadyHandled = await dbContext.RemoteTransfers.AnyAsync(transfer =>
-            transfer.RemotePath == remotePath &&
-            (transfer.Status == TransferStatus.Completed || transfer.Status == TransferStatus.Running || transfer.Status == TransferStatus.Skipped),
-            cancellationToken);
-
-        if (alreadyHandled)
-        {
-            return;
-        }
-
         var transferRule = FindTransferRule(autoDownload, remotePath);
         if (transferRule is null)
         {
@@ -242,11 +232,22 @@ public sealed class AutoDownloadHostedService(
         }
 
         var totalBytes = await transferClient.GetSizeAsync(remotePath, cancellationToken);
-        var transfer = await QueueTransferAsync(dbContext, transferRule, remotePath, downloadId, totalBytes, cancellationToken);
+        var transfer = await GetOrQueueTransferAsync(dbContext, transferRule, remotePath, downloadId, totalBytes, cancellationToken);
+        if (transfer is null)
+        {
+            return;
+        }
+
         await DownloadAsync(dbContext, transferClient, autoDownload, transferRule, transfer, cancellationToken);
     }
 
-    private static async Task<RemoteTransfer> QueueTransferAsync(
+    /// <summary>
+    /// Returns the transfer to (re-)download, or null if nothing new needs to happen.
+    /// A prior Completed/Skipped transfer for the same remote path is reused as long as the remote
+    /// content's size hasn't changed; if it has (e.g. new files landed in an already-downloaded folder),
+    /// the transfer is reset to Queued so the new content gets picked up.
+    /// </summary>
+    private static async Task<RemoteTransfer?> GetOrQueueTransferAsync(
         FlowarrDbContext dbContext,
         TransferRuleSettings transferRule,
         string remotePath,
@@ -261,6 +262,24 @@ public sealed class AutoDownloadHostedService(
 
         if (existing is not null)
         {
+            if (existing.Status is TransferStatus.Queued or TransferStatus.Running)
+            {
+                return null;
+            }
+
+            if (totalBytes == existing.TotalBytes)
+            {
+                return null;
+            }
+
+            existing.Status = TransferStatus.Queued;
+            existing.TotalBytes = totalBytes;
+            existing.BytesTransferred = 0;
+            existing.LocalPath = transferRule.LocalPath;
+            existing.Message = "Requeued by auto-download scan; remote content changed.";
+            existing.StartedAt = null;
+            existing.CompletedAt = null;
+            await dbContext.SaveChangesAsync(cancellationToken);
             return existing;
         }
 
