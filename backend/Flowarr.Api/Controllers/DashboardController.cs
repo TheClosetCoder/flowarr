@@ -206,6 +206,17 @@ public sealed class DashboardController(
                 location.FreeBytes = snapshot.FreeBytes;
                 location.LastScannedAt = DateTimeOffset.UtcNow;
             }
+
+            // Remove rows this scanner no longer produces (renamed/removed roots and rules), so
+            // stale entries don't linger forever showing whatever value they had at the time.
+            foreach (var kindGroup in snapshots.GroupBy(snapshot => snapshot.Kind))
+            {
+                var currentNames = kindGroup.Select(snapshot => snapshot.Name).ToHashSet(StringComparer.Ordinal);
+                var staleLocations = await dbContext.StorageLocations
+                    .Where(item => item.Kind == kindGroup.Key && !currentNames.Contains(item.Name))
+                    .ToListAsync(cancellationToken);
+                dbContext.StorageLocations.RemoveRange(staleLocations);
+            }
         }
     }
 }

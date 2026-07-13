@@ -235,8 +235,17 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
 
         cancellationToken.ThrowIfCancellationRequested();
         using var output = File.Open(localPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        client.DownloadFile(remotePath, output);
-        progress?.Report(output.Length);
+        var previousBytes = 0UL;
+        client.DownloadFile(remotePath, output, bytesDownloaded =>
+        {
+            // downloadCallback reports bytes downloaded so far for this file, not a delta.
+            var delta = (long)(bytesDownloaded - previousBytes);
+            previousBytes = bytesDownloaded;
+            if (delta > 0)
+            {
+                progress?.Report(delta);
+            }
+        });
         return output.Length;
     }
 

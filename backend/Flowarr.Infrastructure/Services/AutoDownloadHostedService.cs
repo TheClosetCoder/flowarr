@@ -151,9 +151,19 @@ public sealed class AutoDownloadHostedService(
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
 
+            var progressStopwatch = System.Diagnostics.Stopwatch.StartNew();
             var progress = new InlineProgress<long>(bytes =>
             {
                 transfer.BytesTransferred += bytes;
+
+                // The SFTP client reports progress per chunk (can be hundreds of times per file),
+                // so only persist to the database periodically rather than on every tick.
+                if (progressStopwatch.Elapsed < TimeSpan.FromSeconds(1))
+                {
+                    return;
+                }
+
+                progressStopwatch.Restart();
                 dbContext.SaveChanges();
             });
 
