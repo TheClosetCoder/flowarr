@@ -91,12 +91,13 @@ public sealed class PlexClient(
 
                             var episodesResponse = await client.GetFromJsonAsync<PlexMetadataResponse>($"library/metadata/{show.RatingKey}/allLeaves", cancellationToken);
                             var leaves = episodesResponse?.MediaContainer?.Metadata ?? [];
-                            logger.LogInformation("Plex show {ShowTitle} (ratingKey {RatingKey}): allLeaves returned {Count} episode(s)", show.Title, show.RatingKey, leaves.Count);
 
                             foreach (var episode in leaves)
                             {
                                 var title = string.IsNullOrWhiteSpace(episode.GrandparentTitle) ? episode.Title : $"{episode.GrandparentTitle} - {episode.Title}";
-                                var seriesTitle = episode.GrandparentTitle ?? show.Title;
+                                // Plex returns "" (not null) for grandparentTitle on some episodes -
+                                // "??" doesn't catch that, so use the same blank check as above.
+                                var seriesTitle = string.IsNullOrWhiteSpace(episode.GrandparentTitle) ? show.Title : episode.GrandparentTitle;
                                 var episodeItems = ToLibraryItems(episode, title, "episode", seriesTitle).ToList();
                                 if (episodeItems.Count == 0)
                                 {
