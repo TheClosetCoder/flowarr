@@ -8,10 +8,6 @@ import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import type { CleanupCandidateSummary, CleanupSettings, JobRun } from "../types";
 
-function basename(path: string) {
-  return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || path;
-}
-
 function groupByDuplicateKey(items: CleanupCandidateSummary[]) {
   const groups = new Map<string, { keptPath?: string; items: CleanupCandidateSummary[] }>();
   for (const item of items) {
@@ -64,6 +60,7 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
   const [autoGenerateIntervalHours, setAutoGenerateIntervalHours] = React.useState(24);
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
   const [confirmText, setConfirmText] = React.useState("");
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [generatingJobId, setGeneratingJobId] = React.useState<string | null>(null);
   const [showHistory, setShowHistory] = React.useState(false);
   const [historyCandidates, setHistoryCandidates] = React.useState<CleanupCandidateSummary[]>([]);
@@ -165,46 +162,64 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
 
   function renderActions(item: CleanupCandidateSummary) {
     return (
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink">
-        <span>{formatBytes(item.sizeBytes)}</span>
-        <span className="text-muted">Dry-run: {String(item.dryRun)}</span>
-        <button onClick={() => void approveDryRun(item.id)} className="rounded-md border border-line px-3 py-1 hover:bg-surfaceMuted">Approve dry-run</button>
-        <button onClick={() => void reject(item.id)} className="rounded-md border border-line px-3 py-1 hover:bg-surfaceMuted">Reject</button>
-        {confirmingId === item.id ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              value={confirmText}
-              onChange={(event) => setConfirmText(event.target.value)}
-              placeholder="Paste the exact path to confirm"
-              className="w-72 rounded-md border border-line bg-surfaceMuted px-2 py-1 text-xs text-ink outline-none focus:border-danger"
-            />
-            <button
-              onClick={() => void confirmDelete(item)}
-              disabled={confirmText !== item.path}
-              className="rounded-md bg-danger px-3 py-1 text-bg disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Confirm delete
-            </button>
+      <div className="mt-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-ink">
+          <span>{formatBytes(item.sizeBytes)}</span>
+          <span className="text-muted">Dry-run: {String(item.dryRun)}</span>
+          <button onClick={() => void approveDryRun(item.id)} className="rounded-md border border-line px-3 py-1 hover:bg-surfaceMuted">Approve dry-run</button>
+          <button onClick={() => void reject(item.id)} className="rounded-md border border-line px-3 py-1 hover:bg-surfaceMuted">Reject</button>
+          {confirmingId !== item.id && (
             <button
               onClick={() => {
-                setConfirmingId(null);
+                setConfirmingId(item.id);
                 setConfirmText("");
+                setCopiedId(null);
               }}
-              className="rounded-md border border-line px-3 py-1 hover:bg-surfaceMuted"
+              className="rounded-md border border-danger px-3 py-1 text-danger hover:bg-dangerMuted"
             >
-              Cancel
+              Delete
             </button>
+          )}
+        </div>
+        {confirmingId === item.id && (
+          <div className="rounded-md border border-danger/50 bg-dangerMuted p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-danger">This exact location will be deleted</p>
+            <p className="mt-1 break-all font-mono text-sm text-ink">{item.path}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                value={confirmText}
+                onChange={(event) => setConfirmText(event.target.value)}
+                placeholder="Paste the exact path to confirm"
+                className="w-72 rounded-md border border-line bg-surfaceMuted px-2 py-1 text-xs text-ink outline-none focus:border-danger"
+              />
+              <button
+                onClick={() => {
+                  void navigator.clipboard.writeText(item.path);
+                  setCopiedId(item.id);
+                  window.setTimeout(() => setCopiedId((current) => (current === item.id ? null : current)), 1500);
+                }}
+                className="rounded-md border border-line px-3 py-1 text-xs text-ink hover:bg-surfaceMuted"
+              >
+                {copiedId === item.id ? "Copied!" : "Copy path"}
+              </button>
+              <button
+                onClick={() => void confirmDelete(item)}
+                disabled={confirmText !== item.path}
+                className="rounded-md bg-danger px-3 py-1 text-bg disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Confirm delete
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmingId(null);
+                  setConfirmText("");
+                }}
+                className="rounded-md border border-line px-3 py-1 hover:bg-surfaceMuted"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-        ) : (
-          <button
-            onClick={() => {
-              setConfirmingId(item.id);
-              setConfirmText("");
-            }}
-            className="rounded-md border border-danger px-3 py-1 text-danger hover:bg-dangerMuted"
-          >
-            Delete
-          </button>
         )}
       </div>
     );
@@ -215,7 +230,12 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
       <div key={item.id} className="rounded-md border border-line bg-surfaceMuted/40 p-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="break-all font-medium text-ink">{item.path}</p>
+            {item.reasonType === "Duplicate" && (
+              <p className="text-xs font-medium uppercase tracking-wide text-danger">
+                {item.keptPath ? "Extra copy - candidate for deletion" : "Possible duplicate - candidate for deletion"}
+              </p>
+            )}
+            <p className="break-all font-mono text-sm font-medium text-ink">{item.path}</p>
             <p className="mt-1 text-sm text-muted">{item.reason}</p>
             {(typeof item.viewCount === "number" || item.lastViewedAt || item.addedAt) && (
               <p className="mt-1 text-xs text-muted">
@@ -276,9 +296,10 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
                 {duplicateGroups.map((group) => (
                   <div key={group.items[0].duplicateGroupKey ?? group.items[0].id} className="rounded-md border border-line p-3">
                     {group.keptPath && (
-                      <p className="mb-2 text-xs text-muted">
-                        Keeping <span className="font-medium text-ink">{basename(group.keptPath)}</span>
-                      </p>
+                      <div className="mb-3 rounded-md border border-success/30 bg-successMuted px-3 py-2">
+                        <p className="text-xs font-medium uppercase tracking-wide text-success">Keeping this location</p>
+                        <p className="mt-1 break-all font-mono text-sm text-ink">{group.keptPath}</p>
+                      </div>
                     )}
                     <div className="space-y-2">{group.items.map(renderCandidateRow)}</div>
                   </div>
