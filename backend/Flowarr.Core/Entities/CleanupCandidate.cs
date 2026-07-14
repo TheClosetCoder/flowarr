@@ -21,4 +21,11 @@ public sealed class CleanupCandidate
     public int ViewCount { get; set; }
     public DateTimeOffset? LastViewedAt { get; set; }
     public DateTimeOffset? AddedAt { get; set; }
+    public string? SeriesTitle { get; set; }
+    public int? SeasonNumber { get; set; }
+    public int? EpisodeNumber { get; set; }
+    public string? MediaType { get; set; }
+    public CleanupReasonType ReasonType { get; set; } = CleanupReasonType.Stale;
+    public string? DuplicateGroupKey { get; set; }
+    public string? KeptPath { get; set; }
 }

@@ -80,7 +80,7 @@ export function App() {
       fetchJson<DashboardSummary>("/api/dashboard").then(setDashboard),
       fetchJson<DownloadItem[]>("/api/downloads").then(setDownloads),
       fetchJson<StorageLocation[]>("/api/storage").then(setStorage),
-      fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates").then(setCandidates),
+      fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates?status=PendingReview").then(setCandidates),
       fetchJson<RemoteTransfer[]>("/api/transfers").then(setTransfers),
       fetchJson<JobRun[]>("/api/jobs").then(setJobs),
       refreshSettings()

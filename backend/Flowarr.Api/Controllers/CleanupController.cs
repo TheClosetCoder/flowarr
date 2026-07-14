@@ -1,4 +1,5 @@
 using Flowarr.Core.Entities;
+using Flowarr.Core.Enums;
 using Flowarr.Core.Services;
 using Flowarr.Infrastructure.Data;
 using Flowarr.Infrastructure.Services;
@@ -32,9 +33,15 @@ public sealed class CleanupController(
     }
 
     [HttpGet("candidates")]
-    public async Task<IActionResult> GetCandidates(CancellationToken cancellationToken)
+    public async Task<IActionResult> GetCandidates([FromQuery] CleanupStatus? status, CancellationToken cancellationToken)
     {
-        var candidates = await dbContext.CleanupCandidates
+        var query = dbContext.CleanupCandidates.AsQueryable();
+        if (status is { } value)
+        {
+            query = query.Where(candidate => candidate.Status == value);
+        }
+
+        var candidates = await query
             .OrderByDescending(candidate => candidate.CreatedAt)
             .ToListAsync(cancellationToken);
 
@@ -46,32 +53,7 @@ public sealed class CleanupController(
     {
         var run = await jobRunService.StartAsync("cleanup.generate", cancellationToken);
 
-        _ = Task.Run(async () =>
-        {
-            using var scope = scopeFactory.CreateScope();
-            var scopedDbContext = scope.ServiceProvider.GetRequiredService<FlowarrDbContext>();
-            var scopedJobRunService = scope.ServiceProvider.GetRequiredService<IJobRunService>();
-            var scopedCleanupService = scope.ServiceProvider.GetRequiredService<ICleanupRecommendationService>();
-
-            var trackedRun = await scopedDbContext.JobRuns.FindAsync([run.Id], CancellationToken.None);
-            if (trackedRun is null)
-            {
-                return;
-            }
-
-            try
-            {
-                await scopedCleanupService.GenerateCandidatesAsync(
-                    onProgress: message => scopedJobRunService.ReportProgressAsync(trackedRun, message, CancellationToken.None),
-                    cancellationToken: CancellationToken.None);
-                await scopedJobRunService.CompleteAsync(trackedRun, CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Cleanup candidate generation failed");
-                await scopedJobRunService.FailAsync(trackedRun, ex, CancellationToken.None);
-            }
-        });
+        _ = Task.Run(() => CleanupGenerationRunner.RunTrackedAsync(scopeFactory, run.Id, logger, CancellationToken.None));
 
         return Accepted(new { jobId = run.Id });
     }

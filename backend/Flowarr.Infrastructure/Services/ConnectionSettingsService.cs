@@ -111,7 +111,10 @@ public sealed class ConnectionSettingsService(
     {
         var saved = await GetConnectionAsync("cleanupSettings", cancellationToken);
         var settings = ReadSettings(saved);
-        return new CleanupSettings(GetInt(settings, "staleAfterDays", 90));
+        return new CleanupSettings(
+            GetInt(settings, "staleAfterDays", 90),
+            GetBool(settings, "autoGenerateEnabled", false),
+            GetInt(settings, "autoGenerateIntervalHours", 24));
     }
 
     public Task<ArrConnectionSettings> GetSonarrAsync(CancellationToken cancellationToken = default)
@@ -223,7 +226,9 @@ public sealed class ConnectionSettingsService(
             true,
             new Dictionary<string, string?>
             {
-                ["staleAfterDays"] = request.StaleAfterDays.ToString()
+                ["staleAfterDays"] = request.StaleAfterDays.ToString(),
+                ["autoGenerateEnabled"] = request.AutoGenerateEnabled.ToString(),
+                ["autoGenerateIntervalHours"] = request.AutoGenerateIntervalHours.ToString()
             },
             [],
             cancellationToken);
@@ -502,6 +507,6 @@ public sealed record SaveArrConnectionRequest(
     string? ApiKey,
     bool ClearApiKey);
 
-public sealed record CleanupSettings(int StaleAfterDays);
+public sealed record CleanupSettings(int StaleAfterDays, bool AutoGenerateEnabled, int AutoGenerateIntervalHours);
 
-public sealed record SaveCleanupSettingsRequest(int StaleAfterDays);
+public sealed record SaveCleanupSettingsRequest(int StaleAfterDays, bool AutoGenerateEnabled = false, int AutoGenerateIntervalHours = 24);

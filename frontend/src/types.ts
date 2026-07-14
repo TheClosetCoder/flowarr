@@ -7,6 +7,17 @@ export type DashboardSummary = {
   storageLocations: DashboardStorageLocation[];
   downloads: DashboardDownload[];
   activeTransfers: ActiveTransferSummary[];
+  cleanupStats: CleanupStats;
+};
+
+export type CleanupStats = {
+  pendingDuplicateCount: number;
+  pendingDuplicateBytes: number;
+  pendingStaleCount: number;
+  pendingStaleBytes: number;
+  lifetimeFreedBytes: number;
+  lastScanAt?: string;
+  nextScanAt?: string;
 };
 
 export type StorageSummary = { usedBytes: number; freeBytes: number };
@@ -29,8 +40,16 @@ export type CleanupCandidateSummary = {
   viewCount?: number;
   lastViewedAt?: string;
   addedAt?: string;
+  seriesTitle?: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
+  mediaType?: string;
+  reasonType?: "Duplicate" | "Stale";
+  duplicateGroupKey?: string;
+  keptPath?: string;
+  status?: string;
 };
-export type CleanupSettings = { staleAfterDays: number };
+export type CleanupSettings = { staleAfterDays: number; autoGenerateEnabled: boolean; autoGenerateIntervalHours: number };
 export type DashboardStorageLocation = { name: string; kind: string; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
 export type DashboardDownload = { id: string; client: string; name: string; status: string; progress: number; sizeBytes: number; remotePath?: string; updatedAt: string };
 export type DownloadItem = { id: string; name: string; client: string; status: string; progress: number; sizeBytes: number; remotePath?: string };

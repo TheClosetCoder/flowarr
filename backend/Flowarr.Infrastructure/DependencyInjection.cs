@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<IStorageScanner>(provider => provider.GetRequiredService<SeedboxStorageScanner>());
         services.AddHostedService<FlowarrSyncHostedService>();
         services.AddHostedService<AutoDownloadHostedService>();
+        services.AddHostedService<CleanupScheduleHostedService>();
 
         return services;
     }

@@ -1,4 +1,4 @@
-import { Download, HardDrive, ImportIcon, Server, Trash2 } from "lucide-react";
+import { Copy, Download, HardDrive, ImportIcon, Server, Trash2 } from "lucide-react";
 import { fetchJson, postEmpty } from "../api";
 import { Card, CardHeader } from "../components/Card";
 import { EmptyState } from "../components/EmptyState";
@@ -101,21 +101,55 @@ export function Dashboard({
         </Card>
       </div>
 
-      <Card>
-        <CardHeader title="Cleanup review" />
-        {dashboard?.cleanupCandidates.length ? (
-          <div className="space-y-2">
-            {dashboard.cleanupCandidates.map((item) => (
-              <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
-                <p className="min-w-0 flex-1 truncate text-sm text-ink">{item.path}</p>
-                <StatusBadge status={item.confidence} />
-              </div>
-            ))}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader title="Cleanup" description="Space that could be reclaimed right now." />
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+              <p className="text-xs text-muted">Duplicates</p>
+              <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.pendingDuplicateCount ?? 0} file(s)</p>
+              <p className="text-xs text-muted">{formatBytes(dashboard?.cleanupStats.pendingDuplicateBytes ?? 0)}</p>
+            </div>
+            <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+              <p className="text-xs text-muted">Stale / unwatched</p>
+              <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.pendingStaleCount ?? 0} file(s)</p>
+              <p className="text-xs text-muted">{formatBytes(dashboard?.cleanupStats.pendingStaleBytes ?? 0)}</p>
+            </div>
+            <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+              <p className="text-xs text-muted">Space freed to date</p>
+              <p className="mt-1 font-medium text-ink">{formatBytes(dashboard?.cleanupStats.lifetimeFreedBytes ?? 0)}</p>
+            </div>
+            <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+              <p className="text-xs text-muted">Last scan</p>
+              <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.lastScanAt ? formatRelativeTime(dashboard.cleanupStats.lastScanAt) : "Never"}</p>
+              {dashboard?.cleanupStats.nextScanAt && <p className="text-xs text-muted">Next: {formatRelativeTime(dashboard.cleanupStats.nextScanAt)}</p>}
+            </div>
           </div>
-        ) : (
-          <EmptyState icon={Trash2} message="Nothing pending review." />
-        )}
-      </Card>
+        </Card>
+
+        <Card>
+          <CardHeader title="Cleanup review" />
+          {dashboard?.cleanupCandidates.length ? (
+            <div className="space-y-2">
+              {dashboard.cleanupCandidates.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-ink">{item.seriesTitle ? `${item.seriesTitle}${typeof item.seasonNumber === "number" ? ` - Season ${item.seasonNumber}` : ""}` : basenameOf(item.path)}</p>
+                    {item.reasonType === "Duplicate" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Copy size={12} /> Duplicate</span>}
+                  </div>
+                  <StatusBadge status={item.confidence} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={Trash2} message="Nothing pending review." />
+          )}
+        </Card>
+      </div>
     </section>
   );
+}
+
+function basenameOf(path: string) {
+  return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || path;
 }

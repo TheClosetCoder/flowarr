@@ -16,6 +16,7 @@ public sealed class DashboardController(
     IDownloadClient downloadClient,
     IEnumerable<IStorageScanner> storageScanners,
     IStorageSyncService storageSyncService,
+    IConnectionSettingsService connectionSettingsService,
     ILogger<DashboardController> logger) : ControllerBase
 {
     [HttpGet]
@@ -78,8 +79,14 @@ public sealed class DashboardController(
                 candidate.SizeBytes,
                 candidate.Reason,
                 candidate.Confidence.ToString(),
-                candidate.DryRun))
+                candidate.DryRun,
+                candidate.SeriesTitle,
+                candidate.SeasonNumber,
+                candidate.ReasonType.ToString(),
+                candidate.DuplicateGroupKey))
             .ToListAsync(cancellationToken);
+
+        var cleanupStats = await BuildCleanupStatsAsync(cancellationToken);
 
         var local = storage.Where(item => item.Kind == StorageKind.Local);
         var seedbox = storage.Where(item => item.Kind == StorageKind.Seedbox);
@@ -106,7 +113,43 @@ public sealed class DashboardController(
                 download.SizeBytes,
                 download.RemotePath,
                 download.UpdatedAt)).ToList(),
-            activeTransfers);
+            activeTransfers,
+            cleanupStats);
+    }
+
+    private async Task<CleanupStats> BuildCleanupStatsAsync(CancellationToken cancellationToken)
+    {
+        var pending = await dbContext.CleanupCandidates
+            .Where(candidate => candidate.Status == CleanupStatus.PendingReview)
+            .GroupBy(candidate => candidate.ReasonType)
+            .Select(group => new { ReasonType = group.Key, Count = group.Count(), Bytes = group.Sum(candidate => candidate.SizeBytes) })
+            .ToListAsync(cancellationToken);
+
+        var duplicates = pending.FirstOrDefault(group => group.ReasonType == CleanupReasonType.Duplicate);
+        var stale = pending.FirstOrDefault(group => group.ReasonType == CleanupReasonType.Stale);
+
+        var lifetimeFreedBytes = await dbContext.CleanupCandidates
+            .Where(candidate => candidate.Status == CleanupStatus.Deleted)
+            .SumAsync(candidate => candidate.SizeBytes, cancellationToken);
+
+        var lastRun = await dbContext.JobRuns
+            .Where(run => run.JobType == "cleanup.generate" && run.Status == JobRunStatus.Succeeded)
+            .OrderByDescending(run => run.CompletedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var cleanupSettings = await connectionSettingsService.GetCleanupSettingsAsync(cancellationToken);
+        var nextScanAt = cleanupSettings.AutoGenerateEnabled && lastRun?.CompletedAt is { } lastCompletedAt
+            ? lastCompletedAt.AddHours(cleanupSettings.AutoGenerateIntervalHours)
+            : (DateTimeOffset?)null;
+
+        return new CleanupStats(
+            duplicates?.Count ?? 0,
+            duplicates?.Bytes ?? 0,
+            stale?.Count ?? 0,
+            stale?.Bytes ?? 0,
+            lifetimeFreedBytes,
+            lastRun?.CompletedAt,
+            nextScanAt);
     }
 
     private static string GetDisplayTitle(string remotePath, string localPath)

@@ -48,13 +48,15 @@ public sealed class CleanupRecommendationService(
             {
                 TryAddCandidate(candidates, existingPendingPaths, duplicate,
                     $"Duplicate version of \"{duplicate.Title}\" - this copy is {FormatGb(duplicate.FileSizeBytes)} vs the {FormatGb(kept.FileSizeBytes)} copy being kept.",
-                    CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun);
+                    CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
+                    CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath);
             }
 
             var staleReason = GetStaleReason(kept, now, staleAfter);
             if (staleReason is not null)
             {
-                TryAddCandidate(candidates, existingPendingPaths, kept, staleReason, CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun);
+                TryAddCandidate(candidates, existingPendingPaths, kept, staleReason, CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
+                    CleanupReasonType.Stale, duplicateGroupKey: null, keptPath: null);
             }
         }
 
@@ -76,7 +78,8 @@ public sealed class CleanupRecommendationService(
 
                 TryAddCandidate(candidates, existingPendingPaths, item,
                     $"Possible duplicate title: \"{item.Title}\" appears under multiple separate Plex entries. Review manually.",
-                    CleanupMatchConfidence.Uncertain, options.Value.Cleanup.DryRun);
+                    CleanupMatchConfidence.Uncertain, options.Value.Cleanup.DryRun,
+                    CleanupReasonType.Duplicate, $"title:{NormalizeTitle(item.Title)}", keptPath: null);
             }
         }
 
@@ -111,7 +114,10 @@ public sealed class CleanupRecommendationService(
         PlexLibraryItem item,
         string reason,
         CleanupMatchConfidence confidence,
-        bool dryRun)
+        bool dryRun,
+        CleanupReasonType reasonType,
+        string? duplicateGroupKey,
+        string? keptPath)
     {
         // Plex's reported path only resolves to a real file if Plex and Flowarr share the same
         // mount layout - skip rather than present a candidate we can't actually verify or act on.
@@ -129,7 +135,14 @@ public sealed class CleanupRecommendationService(
             DryRun = dryRun,
             ViewCount = item.ViewCount,
             LastViewedAt = item.LastViewedAt,
-            AddedAt = item.AddedAt
+            AddedAt = item.AddedAt,
+            SeriesTitle = item.SeriesTitle,
+            SeasonNumber = item.SeasonNumber,
+            EpisodeNumber = item.EpisodeNumber,
+            MediaType = item.MediaType,
+            ReasonType = reasonType,
+            DuplicateGroupKey = duplicateGroupKey,
+            KeptPath = keptPath
         });
     }
 

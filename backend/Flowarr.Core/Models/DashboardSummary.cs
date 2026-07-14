@@ -8,7 +8,8 @@ public sealed record DashboardSummary(
     IReadOnlyCollection<CleanupCandidateSummary> CleanupCandidates,
     IReadOnlyCollection<StorageLocationSummary> StorageLocations,
     IReadOnlyCollection<DownloadSummary> Downloads,
-    IReadOnlyCollection<ActiveTransferSummary> ActiveTransfers);
+    IReadOnlyCollection<ActiveTransferSummary> ActiveTransfers,
+    CleanupStats CleanupStats);
 
 public sealed record StorageSummary(long UsedBytes, long FreeBytes);
 
@@ -22,7 +23,26 @@ public sealed record ActiveTransferSummary(
     long TotalBytes,
     DateTimeOffset CreatedAt);
 
-public sealed record CleanupCandidateSummary(Guid Id, string Path, long SizeBytes, string Reason, string Confidence, bool DryRun);
+public sealed record CleanupCandidateSummary(
+    Guid Id,
+    string Path,
+    long SizeBytes,
+    string Reason,
+    string Confidence,
+    bool DryRun,
+    string? SeriesTitle = null,
+    int? SeasonNumber = null,
+    string? ReasonType = null,
+    string? DuplicateGroupKey = null);
+
+public sealed record CleanupStats(
+    int PendingDuplicateCount,
+    long PendingDuplicateBytes,
+    int PendingStaleCount,
+    long PendingStaleBytes,
+    long LifetimeFreedBytes,
+    DateTimeOffset? LastScanAt,
+    DateTimeOffset? NextScanAt);
 
 public sealed record StorageLocationSummary(
     string Name,

@@ -12,4 +12,8 @@ public sealed record PlexLibraryItem(
     long FileSizeBytes,
     int ViewCount,
     DateTimeOffset? LastViewedAt,
-    DateTimeOffset? AddedAt);
+    DateTimeOffset? AddedAt,
+    string MediaType,
+    string? SeriesTitle,
+    int? SeasonNumber,
+    int? EpisodeNumber);

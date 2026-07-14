@@ -67,7 +67,7 @@ public sealed class PlexClient(
                     var response = await client.GetFromJsonAsync<PlexMetadataResponse>($"library/sections/{section.Key}/all", cancellationToken);
                     foreach (var metadata in response?.MediaContainer?.Metadata ?? [])
                     {
-                        items.AddRange(ToLibraryItems(metadata, metadata.Title));
+                        items.AddRange(ToLibraryItems(metadata, metadata.Title, "movie", seriesTitle: null));
                     }
                 }
                 else if (section.Type == "show")
@@ -93,7 +93,7 @@ public sealed class PlexClient(
                             foreach (var episode in episodesResponse?.MediaContainer?.Metadata ?? [])
                             {
                                 var title = string.IsNullOrWhiteSpace(episode.GrandparentTitle) ? episode.Title : $"{episode.GrandparentTitle} - {episode.Title}";
-                                items.AddRange(ToLibraryItems(episode, title));
+                                items.AddRange(ToLibraryItems(episode, title, "episode", episode.GrandparentTitle ?? show.Title));
                             }
                         }
                         catch (Exception ex)
@@ -112,7 +112,7 @@ public sealed class PlexClient(
         return items;
     }
 
-    private static IEnumerable<PlexLibraryItem> ToLibraryItems(PlexMetadataItem metadata, string title)
+    private static IEnumerable<PlexLibraryItem> ToLibraryItems(PlexMetadataItem metadata, string title, string mediaType, string? seriesTitle)
     {
         var lastViewedAt = metadata.LastViewedAt is long lastViewed ? DateTimeOffset.FromUnixTimeSeconds(lastViewed) : (DateTimeOffset?)null;
         var addedAt = metadata.AddedAt is long added ? DateTimeOffset.FromUnixTimeSeconds(added) : (DateTimeOffset?)null;
@@ -127,7 +127,9 @@ public sealed class PlexClient(
                     continue;
                 }
 
-                yield return new PlexLibraryItem(metadata.RatingKey, title, part.File, part.Size ?? 0, viewCount, lastViewedAt, addedAt);
+                yield return new PlexLibraryItem(
+                    metadata.RatingKey, title, part.File, part.Size ?? 0, viewCount, lastViewedAt, addedAt,
+                    mediaType, seriesTitle, metadata.ParentIndex, metadata.Index);
             }
         }
     }
@@ -169,6 +171,8 @@ public sealed class PlexClient(
         [property: JsonPropertyName("ratingKey")] string RatingKey,
         [property: JsonPropertyName("title")] string Title,
         [property: JsonPropertyName("grandparentTitle")] string? GrandparentTitle,
+        [property: JsonPropertyName("parentIndex")] int? ParentIndex,
+        [property: JsonPropertyName("index")] int? Index,
         [property: JsonPropertyName("viewCount")] int? ViewCount,
         [property: JsonPropertyName("lastViewedAt")] long? LastViewedAt,
         [property: JsonPropertyName("addedAt")] long? AddedAt,
