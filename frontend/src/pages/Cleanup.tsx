@@ -54,6 +54,20 @@ function groupByDuplicateKey(items: CleanupCandidateSummary[]) {
   return Array.from(groups.values());
 }
 
+// An explicit isSuggestedKeep item is always the keeper, however many siblings remain - that
+// flag is a real server-side signal, not a UI guess. Only fall back to "arbitrarily treat the
+// first item as the keeper" when there's no such signal AND more than one candidate exists to
+// choose between; a lone item with no keeper flag (its sibling already resolved elsewhere) has
+// nothing to be "kept over" and should be treated as a normal actionable duplicate.
+function resolveDuplicateGroup(group: { items: CleanupCandidateSummary[] }, keepOverrides: Record<string, string>) {
+  const key = group.items[0]?.duplicateGroupKey ?? group.items[0]?.id ?? "";
+  const explicitKeep = group.items.find((item) => item.isSuggestedKeep);
+  const suggested = explicitKeep ?? (group.items.length > 1 ? group.items[0] : undefined);
+  const keepPath = suggested ? keepOverrides[key] ?? suggested.path : undefined;
+  const deletable = keepPath ? group.items.filter((item) => item.path !== keepPath) : group.items;
+  return { key, keepPath, deletable };
+}
+
 function totalBytes(items: CleanupCandidateSummary[]) {
   return items.reduce((sum, item) => sum + item.sizeBytes, 0);
 }
@@ -414,17 +428,7 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
   }
 
   function renderDuplicateCluster(group: { items: CleanupCandidateSummary[] }) {
-    const key = group.items[0]?.duplicateGroupKey ?? group.items[0]?.id ?? "";
-    // An explicit isSuggestedKeep item is always the keeper, however many siblings remain -
-    // that flag is a real server-side signal, not a UI guess. Only fall back to "arbitrarily
-    // treat the first item as the keeper" when there's no such signal AND more than one
-    // candidate exists to choose between; a lone item with no keeper flag (tier-2 title-matched
-    // duplicates, sibling already resolved elsewhere) has nothing to be "kept over" and should
-    // show as a normal actionable duplicate instead of vanishing.
-    const explicitKeep = group.items.find((item) => item.isSuggestedKeep);
-    const suggested = explicitKeep ?? (group.items.length > 1 ? group.items[0] : undefined);
-    const keepPath = suggested ? keepOverrides[key] ?? suggested.path : undefined;
-    const deletable = keepPath ? group.items.filter((item) => item.path !== keepPath) : group.items;
+    const { key, keepPath, deletable } = resolveDuplicateGroup(group, keepOverrides);
     const ids = idsOf(deletable);
 
     return (
@@ -689,7 +693,11 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
               action={<Copy size={18} className="text-muted" />}
             />
             {renderSeriesSeasonTree(duplicateTree, (items) => (
-              <div className="space-y-3">{groupByDuplicateKey(items).map(renderDuplicateCluster)}</div>
+              <div className="space-y-3">
+                {groupByDuplicateKey(items)
+                  .filter((group) => resolveDuplicateGroup(group, keepOverrides).deletable.length > 0)
+                  .map(renderDuplicateCluster)}
+              </div>
             ))}
           </Card>
         </>
