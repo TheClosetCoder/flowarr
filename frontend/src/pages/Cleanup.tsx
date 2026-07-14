@@ -439,7 +439,24 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
             />
             Select all {ids.length} in this group
           </label>
-          <span className="text-xs text-muted">{formatBytes(totalBytes(group.items))}</span>
+          <div className="flex items-center gap-2">
+            {ids.length > 0 && (
+              <button
+                onClick={() => {
+                  // Keeping is single-select, so once you've picked one, every other item in the
+                  // group is unambiguously meant to go - jump straight to the (still typed-confirm
+                  // gated) delete flow instead of also requiring the checkboxes to be ticked.
+                  setSelectedIds((current) => new Set([...current, ...ids]));
+                  setBulkConfirming(true);
+                  setBulkConfirmPhrase("");
+                }}
+                className="rounded-md border border-danger px-2 py-1 text-xs text-danger hover:bg-dangerMuted"
+              >
+                Delete {ids.length} {ids.length === 1 ? "copy" : "copies"}
+              </button>
+            )}
+            <span className="text-xs text-muted">{formatBytes(totalBytes(group.items))}</span>
+          </div>
         </div>
         {group.items.length > 1 && (
           <div className="mb-3 space-y-1.5 rounded-md border border-success/30 bg-successMuted px-3 py-2">
