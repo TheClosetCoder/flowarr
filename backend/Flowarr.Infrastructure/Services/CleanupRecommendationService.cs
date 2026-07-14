@@ -34,9 +34,29 @@ public sealed class CleanupRecommendationService(
         // file is still on disk (dry-run approve, reject, or a failed real delete), so a rescan
         // must not re-flag them as a fresh pending candidate and forget the decision. Deleted
         // candidates are excluded - the file is gone, so a rematch there can't happen anyway.
-        var existingByPath = await dbContext.CleanupCandidates
+        var existingRows = await dbContext.CleanupCandidates
             .Where(candidate => candidate.Status != CleanupStatus.Deleted)
-            .ToDictionaryAsync(candidate => candidate.Path, StringComparer.Ordinal, cancellationToken);
+            .ToListAsync(cancellationToken);
+
+        // Earlier scans (before rescans matched decided candidates too) could leave more than
+        // one row for the same path - e.g. a Rejected row plus a freshly re-added PendingReview
+        // row. Collapse those to one row per path so lookups below are unambiguous: keep the
+        // decided row if there is one, otherwise the newest, and drop the rest.
+        var existingByPath = new Dictionary<string, CleanupCandidate>(StringComparer.Ordinal);
+        foreach (var group in existingRows.GroupBy(candidate => candidate.Path, StringComparer.Ordinal))
+        {
+            var primary = group.Count() == 1
+                ? group.Single()
+                : group.FirstOrDefault(candidate => candidate.Status != CleanupStatus.PendingReview)
+                    ?? group.OrderByDescending(candidate => candidate.CreatedAt).First();
+
+            existingByPath[group.Key] = primary;
+
+            foreach (var duplicate in group.Where(candidate => candidate.Id != primary.Id))
+            {
+                dbContext.CleanupCandidates.Remove(duplicate);
+            }
+        }
 
         var newCandidates = new List<CleanupCandidate>();
         var touchedPaths = new HashSet<string>(StringComparer.Ordinal);
