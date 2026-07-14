@@ -16,13 +16,18 @@ public sealed class CleanupRecommendationService(
     PlexClient plexClient,
     IOptions<IntegrationOptions> options) : ICleanupRecommendationService
 {
-    public async Task<IReadOnlyCollection<CleanupCandidate>> GenerateCandidatesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<CleanupCandidate>> GenerateCandidatesAsync(Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
         var cleanupSettings = await connectionSettingsService.GetCleanupSettingsAsync(cancellationToken);
         var staleAfter = TimeSpan.FromDays(cleanupSettings.StaleAfterDays);
         var now = DateTimeOffset.UtcNow;
 
-        var libraryItems = await plexClient.GetLibraryItemsAsync(cancellationToken);
+        var libraryItems = await plexClient.GetLibraryItemsAsync(onProgress, cancellationToken);
+        if (onProgress is not null)
+        {
+            await onProgress($"Evaluating {libraryItems.Count} file(s) for staleness and duplicates...");
+        }
+
         var existingPendingPaths = (await dbContext.CleanupCandidates
             .Where(candidate => candidate.Status == CleanupStatus.PendingReview)
             .Select(candidate => candidate.Path)
@@ -73,6 +78,11 @@ public sealed class CleanupRecommendationService(
                     $"Possible duplicate title: \"{item.Title}\" appears under multiple separate Plex entries. Review manually.",
                     CleanupMatchConfidence.Uncertain, options.Value.Cleanup.DryRun);
             }
+        }
+
+        if (onProgress is not null)
+        {
+            await onProgress($"Saving {candidates.Count} candidate(s)...");
         }
 
         dbContext.CleanupCandidates.AddRange(candidates);

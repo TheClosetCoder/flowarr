@@ -45,7 +45,7 @@ export type TransferSettings = { enabled: boolean; localImportPath: string; over
 export type TransferRule = { id?: string; enabled: boolean; name: string; remotePathPrefix: string; localPath: string; sourceRootKind: "Download" | "Media"; sourceRootPath: string; deleteRemoteAfterDownload: boolean };
 export type ArrSettings = { enabled: boolean; baseUrl: string; hasApiKey: boolean };
 export type AuthStatus = { setupComplete: boolean; authenticated: boolean };
-export type JobRun = { id: string; jobType: string; status: string; startedAt: string; completedAt?: string; errorMessage?: string };
+export type JobRun = { id: string; jobType: string; status: string; startedAt: string; completedAt?: string; errorMessage?: string; progress?: string };
 export type ConnectionSettings = {
   qbittorrent: { enabled: boolean; clientType: string; baseUrl: string; username: string; hasPassword: boolean };
   sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; remoteRootPath: string; seedboxRoots: SeedboxRoot[]; hasPassword: boolean; hasPrivateKeyPassphrase: boolean; accountQuotaBytes: number };

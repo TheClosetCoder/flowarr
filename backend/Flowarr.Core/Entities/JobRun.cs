@@ -10,4 +10,5 @@ public sealed class JobRun
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CompletedAt { get; set; }
     public string? ErrorMessage { get; set; }
+    public string? Progress { get; set; }
 }

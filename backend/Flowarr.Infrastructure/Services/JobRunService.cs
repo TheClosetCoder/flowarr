@@ -9,6 +9,7 @@ public interface IJobRunService
     Task<JobRun> StartAsync(string jobType, CancellationToken cancellationToken = default);
     Task CompleteAsync(JobRun run, CancellationToken cancellationToken = default);
     Task FailAsync(JobRun run, Exception exception, CancellationToken cancellationToken = default);
+    Task ReportProgressAsync(JobRun run, string message, CancellationToken cancellationToken = default);
 }
 
 public sealed class JobRunService(FlowarrDbContext dbContext) : IJobRunService
@@ -33,6 +34,12 @@ public sealed class JobRunService(FlowarrDbContext dbContext) : IJobRunService
         run.Status = exception is OperationCanceledException ? JobRunStatus.Cancelled : JobRunStatus.Failed;
         run.CompletedAt = DateTimeOffset.UtcNow;
         run.ErrorMessage = exception.Message;
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ReportProgressAsync(JobRun run, string message, CancellationToken cancellationToken = default)
+    {
+        run.Progress = message;
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 }

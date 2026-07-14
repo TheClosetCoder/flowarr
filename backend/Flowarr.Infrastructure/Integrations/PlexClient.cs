@@ -41,7 +41,7 @@ public sealed class PlexClient(
         }
     }
 
-    public async Task<IReadOnlyCollection<PlexLibraryItem>> GetLibraryItemsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<PlexLibraryItem>> GetLibraryItemsAsync(Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
         var settings = await connectionSettingsService.GetPlexAsync(cancellationToken);
         if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.BaseUrl) || string.IsNullOrWhiteSpace(settings.ApiKey))
@@ -59,6 +59,11 @@ public sealed class PlexClient(
             {
                 if (section.Type == "movie")
                 {
+                    if (onProgress is not null)
+                    {
+                        await onProgress($"Scanning movie library \"{section.Title}\"...");
+                    }
+
                     var response = await client.GetFromJsonAsync<PlexMetadataResponse>($"library/sections/{section.Key}/all", cancellationToken);
                     foreach (var metadata in response?.MediaContainer?.Metadata ?? [])
                     {
@@ -67,11 +72,23 @@ public sealed class PlexClient(
                 }
                 else if (section.Type == "show")
                 {
-                    var showResponse = await client.GetFromJsonAsync<PlexMetadataResponse>($"library/sections/{section.Key}/all", cancellationToken);
-                    foreach (var show in showResponse?.MediaContainer?.Metadata ?? [])
+                    if (onProgress is not null)
                     {
+                        await onProgress($"Scanning TV library \"{section.Title}\"...");
+                    }
+
+                    var showResponse = await client.GetFromJsonAsync<PlexMetadataResponse>($"library/sections/{section.Key}/all", cancellationToken);
+                    var shows = showResponse?.MediaContainer?.Metadata ?? [];
+                    for (var showIndex = 0; showIndex < shows.Count; showIndex++)
+                    {
+                        var show = shows[showIndex];
                         try
                         {
+                            if (onProgress is not null)
+                            {
+                                await onProgress($"Loading episodes for \"{show.Title}\" ({showIndex + 1}/{shows.Count})...");
+                            }
+
                             var episodesResponse = await client.GetFromJsonAsync<PlexMetadataResponse>($"library/metadata/{show.RatingKey}/allLeaves", cancellationToken);
                             foreach (var episode in episodesResponse?.MediaContainer?.Metadata ?? [])
                             {

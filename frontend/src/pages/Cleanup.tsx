@@ -6,13 +6,14 @@ import { Card } from "../components/Card";
 import { Input } from "../components/Input";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
-import type { CleanupCandidateSummary, CleanupSettings } from "../types";
+import type { CleanupCandidateSummary, CleanupSettings, JobRun } from "../types";
 
 export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCandidateSummary[]; setCandidates: (items: CleanupCandidateSummary[]) => void }) {
   const [message, setMessage] = React.useState("");
   const [staleAfterDays, setStaleAfterDays] = React.useState(90);
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
   const [confirmText, setConfirmText] = React.useState("");
+  const [generatingJobId, setGeneratingJobId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     void fetchJson<CleanupSettings>("/api/cleanup/settings").then((settings) => setStaleAfterDays(settings.staleAfterDays));
@@ -24,11 +25,49 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
   }
 
   async function generate() {
-    setMessage("Generating recommendations...");
-    const generated = await fetchJson<CleanupCandidateSummary[]>("/api/cleanup/generate");
-    setCandidates(await fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates"));
-    setMessage(generated.length ? `Found ${generated.length} new candidate(s).` : "No new candidates found.");
+    try {
+      setMessage("Starting scan...");
+      const { jobId } = await postJson<{ jobId: string }>("/api/cleanup/generate");
+      setGeneratingJobId(jobId);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to start generating recommendations.");
+    }
   }
+
+  React.useEffect(() => {
+    if (!generatingJobId) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const runs = await fetchJson<JobRun[]>("/api/jobs");
+          const run = runs.find((item) => item.id === generatingJobId);
+          if (!run || run.status === "Running") {
+            setMessage(run?.progress || "Generating recommendations...");
+            return;
+          }
+
+          window.clearInterval(timer);
+          setGeneratingJobId(null);
+
+          if (run.status === "Succeeded") {
+            await refreshCandidates();
+            setMessage("Scan complete.");
+          } else {
+            setMessage(run.errorMessage || `Scan ${run.status.toLowerCase()}.`);
+          }
+        } catch (error) {
+          window.clearInterval(timer);
+          setGeneratingJobId(null);
+          setMessage(error instanceof Error ? error.message : "Failed to check scan progress.");
+        }
+      })();
+    }, 1500);
+
+    return () => window.clearInterval(timer);
+  }, [generatingJobId]);
 
   async function refreshCandidates() {
     setCandidates(await fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates"));
@@ -64,7 +103,13 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
         <div className="flex flex-wrap items-end gap-3">
           <Input label="Consider stale after (days)" value={String(staleAfterDays)} onChange={(value) => setStaleAfterDays(Number(value) || 0)} />
           <button onClick={saveStaleAfterDays} className="rounded-md border border-line px-3 py-2 text-sm text-ink hover:bg-surfaceMuted">Save</button>
-          <button onClick={generate} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-bg">Generate recommendations</button>
+          <button
+            onClick={() => void generate()}
+            disabled={generatingJobId !== null}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-bg disabled:cursor-wait disabled:opacity-60"
+          >
+            {generatingJobId !== null ? "Generating..." : "Generate recommendations"}
+          </button>
         </div>
         {message && <p className="mt-2 text-sm text-muted">{message}</p>}
       </Card>
