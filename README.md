@@ -7,6 +7,7 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 ## What Flowarr Does
 
 - Provides a Docker-based self-hosted web app with a dark, Radarr/Sonarr-style dashboard.
+- Ships a custom app icon and web manifest so it can be installed as an app from a phone or tablet's browser ("Add to Home Screen").
 - Exposes a .NET 8 REST API with Swagger and `/health`.
 - Uses PostgreSQL through Entity Framework Core.
 - Includes a React, TypeScript, and Tailwind frontend.
@@ -172,6 +173,18 @@ Safety rules:
 - Uncertain matches are clearly marked.
 
 Note: candidate paths come from Plex's own view of the filesystem, so Plex and Flowarr need to see the same file paths (e.g. both mounting `/media` the same way) for candidates to resolve to real, deletable files — Flowarr silently skips anything it can't verify exists rather than presenting an unusable candidate.
+
+## App Icon & Add to Home Screen
+
+Flowarr uses a custom "converge" icon (three sources merging into a download tray) instead of a generic favicon, defined once as a scalable source and reused everywhere:
+
+- `frontend/public/icon.svg` — the master vector icon, used as the browser-tab favicon in browsers that support SVG favicons.
+- `frontend/public/icons/favicon-16.png` and `favicon-32.png` — PNG favicon fallbacks for browsers that don't.
+- `frontend/public/icons/apple-touch-icon.png` (180×180) — used by iOS Safari's "Add to Home Screen".
+- `frontend/public/icons/icon-192.png` and `icon-512.png`, referenced from `frontend/public/manifest.webmanifest` — used by Android/Chrome's "Add to Home Screen" / install prompt.
+- `frontend/src/components/FlowarrMark.tsx` — the same glyph as an inline SVG component, used for the in-app sidebar and login-screen logo so it matches the installed icon.
+
+All of this is wired up via `<link>`/`<meta>` tags in `frontend/index.html` (favicon, `apple-touch-icon`, `manifest`, `theme-color`) — nothing further to configure. To change the icon, edit `frontend/public/icon.svg` and `FlowarrMark.tsx` to match, then regenerate the PNGs in `frontend/public/icons/` at the same sizes (16, 32, 48, 180, 192, 512px) with any SVG-to-PNG tool, keeping the existing filenames.
 
 ## Authentication
 
