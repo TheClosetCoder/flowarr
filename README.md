@@ -6,25 +6,26 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 
 ## What Flowarr Does
 
-- Provides a Docker-based self-hosted web app.
+- Provides a Docker-based self-hosted web app with a dark, Radarr/Sonarr-style dashboard.
 - Exposes a .NET 8 REST API with Swagger and `/health`.
 - Uses PostgreSQL through Entity Framework Core.
-- Includes a React, TypeScript, and Tailwind dashboard.
+- Includes a React, TypeScript, and Tailwind frontend.
 - Tracks media items, downloads, media files, storage locations, cleanup candidates, and audit logs.
-- Runs scheduled sync jobs through .NET hosted services and records job history.
+- Runs scheduled sync jobs through .NET hosted services and records job history, including live progress for long-running jobs (e.g. Plex library scans).
 - Shows no torrent or media integration data until real integrations are configured.
-- Can auto-download completed seedbox files over SFTP into configured local media paths.
-- Lets you configure Deluge or qBittorrent, SFTP seedbox, Radarr, Sonarr, and auto-download settings from the app.
-- Separates seedbox download roots from imported media roots.
-- Generates cleanup recommendations with manual approval and dry-run safety by default.
+- Can auto-download completed seedbox files over SFTP into configured local media paths, and lets you cancel a queued or in-flight transfer directly from the UI (a cancelled in-flight transfer's partial local file is deleted to reclaim space).
+- Lets you configure Deluge or qBittorrent, SFTP seedbox, Radarr, Sonarr, Plex, and auto-download settings from the app.
+- Separates seedbox download roots from imported media roots, and groups the Storage page by whether each folder backs a download rule or is just being monitored for free space.
+- Reports accurate free space for both local disks (resolves the actual mount backing a path, not just the container's root filesystem) and, optionally, your real SFTP account quota instead of the shared seedbox host's total disk size.
+- Generates local-disk cleanup recommendations from your Plex watch history (unwatched/stale titles, duplicate versions of the same title) with manual approval and dry-run safety by default.
 - Includes first-run single-admin authentication.
 
 ## What Flowarr Does Not Do
 
-- It does not replace Radarr, Sonarr, Plex, Jellyfin, or qBittorrent.
+- It does not replace Radarr, Sonarr, Plex, or qBittorrent.
 - It does not automatically delete files.
 - It does not make uncertain matches silently safe.
-- It does not replace Plex or Jellyfin APIs yet.
+- It does not integrate with Jellyfin yet.
 
 ## Run With Docker Compose
 
@@ -93,7 +94,7 @@ Flowarr__AutoDownload__LocalImportPath=/media/import
 
 Flowarr can pull completed or seeding downloads from a remote seedbox over SFTP into one or more local media paths.
 
-You can configure Deluge or qBittorrent, SFTP seedbox, Radarr, Sonarr, and auto-download settings from the Connections page in the app. Deluge Web only needs its web password; qBittorrent can use username and password. Passwords, API keys, and key passphrases are encrypted before being stored in PostgreSQL using ASP.NET Core Data Protection. The Docker Compose file persists the encryption key ring in the `flowarr-keys` volume so saved credentials remain readable after container rebuilds.
+You can configure Deluge or qBittorrent, SFTP seedbox, Radarr, Sonarr, Plex, and auto-download settings from the Connections page in the app. Deluge Web only needs its web password; qBittorrent can use username and password. Passwords, API keys, and key passphrases are encrypted before being stored in PostgreSQL using ASP.NET Core Data Protection. The Docker Compose file persists the encryption key ring in the `flowarr-keys` volume so saved credentials remain readable after container rebuilds.
 
 You can also seed defaults with `.env`:
 
@@ -126,9 +127,12 @@ Auto-download behavior:
 - It only processes downloads marked complete or seeding.
 - It can route different remote folders to different local destinations with transfer rules.
 - Example: `/downloads/movies` can go to `/media/Movies`, while `/downloads/tv` can go to `/media/TV Shows`.
-- It skips existing files unless `FLOWARR_AUTO_DOWNLOAD_OVERWRITE_EXISTING=true`.
-- It records completed, skipped, and failed transfers in the transfer log and audit log.
-- It does not delete anything from the seedbox.
+- It skips existing files unless `FLOWARR_AUTO_DOWNLOAD_OVERWRITE_EXISTING=true` — and if a local file's size doesn't match the remote (e.g. a partial file left by an interrupted transfer), it re-downloads it regardless of that setting, since a mismatched size is never a legitimately "already downloaded" file.
+- It records completed, skipped, failed, and cancelled transfers in the transfer log and audit log.
+- Queued and in-flight transfers can be cancelled from the Transfers page or the Dashboard; cancelling an in-flight transfer deletes its partial local file.
+- It does not delete anything from the seedbox unless a transfer rule has "Delete remote after download" enabled.
+
+By default, the Storage page reports free space from the SFTP server's `statvfs` response, which on a shared host is the *whole server's* free space, not your personal allocation. If your provider gives you a fixed quota, set it under Connections → SFTP → "Account quota (GB)" — Flowarr will then report `quota - total account usage` (computed via one periodic scan of the seedbox root, cached for ~15 minutes) as the free-space figure across all your seedbox entries instead.
 
 For multiple disks, add extra bind mounts to the `api` service, then add matching local media paths in the app:
 
@@ -148,21 +152,26 @@ volumes:
 
 ## Cleanup Rules
 
-A file can be suggested for deletion only when:
+Cleanup targets **local disk space**, not the seedbox (the seedbox is assumed to be temporary storage, not something Cleanup needs to manage). It requires a Plex connection (Connections → Services → Plex, with a base URL and token) — Plex's own library data gives Flowarr the exact local file path, watch count, last-viewed date, and (via multiple `Media` entries under one item) a built-in signal for duplicate physical copies of the same title, without needing Radarr/Sonarr at all.
 
-- It exists on the seedbox.
-- The related download is complete or seeding.
-- The file has been imported locally.
-- It exists in the media library or is linked to a known Radarr/Sonarr item.
+Clicking "Generate recommendations" runs as a background job and shows live progress in the UI — Plex requires one API call per TV series to fetch episode data, so a large TV library can take a while.
+
+A local file is suggested for cleanup when:
+
+- **Duplicate version**: Plex has matched multiple physical copies to the same title (multiple `Media` entries on one item). The largest copy is kept; the rest are flagged (`Certain` confidence).
+- **Stale**: never watched and added more than the configured "stale after" threshold ago, or watched but not viewed again within that threshold (default 90 days, configurable on the Cleanup page; `Certain` confidence).
+- **Possible duplicate title**: the same normalized title appears under separate Plex entries that Plex itself did not merge (`Uncertain` confidence — needs manual review, since this is a weaker signal than the Media-group case above).
 
 Safety rules:
 
 - No automatic deletion.
 - Manual approval is required before any cleanup action.
 - Dry-run mode is enabled by default.
-- Real deletion intent requires `Flowarr__Cleanup__AllowDelete=true` and exact path confirmation.
-- Every approval, rejection, or delete-intent is written to the audit log.
+- Real deletion requires `Flowarr__Cleanup__AllowDelete=true`, exact path confirmation (typed into the UI, must match the candidate's path exactly), and the path must fall under a configured seedbox root or local media path.
+- Every approval, rejection, or delete is written to the audit log.
 - Uncertain matches are clearly marked.
+
+Note: candidate paths come from Plex's own view of the filesystem, so Plex and Flowarr need to see the same file paths (e.g. both mounting `/media` the same way) for candidates to resolve to real, deletable files — Flowarr silently skips anything it can't verify exists rather than presenting an unusable candidate.
 
 ## Authentication
 
@@ -171,6 +180,18 @@ On first launch, Flowarr asks you to create a local admin account. The password 
 ## Database Upgrades
 
 Flowarr applies EF Core migrations at API startup. The baseline migration is upgrade-safe for existing POC databases and removes the old example mock rows if they are still present.
+
+**Never edit a migration after it has shipped.** EF Core tracks which migration IDs have already run per database in `__EFMigrationsHistory`; editing an already-applied migration's `Up()` has no effect on environments that already ran it, since `Migrate()` only checks the ID, not the file contents. Add a new migration instead — every migration in this repo after the baseline uses `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` so they're safe to run against databases at different points in history.
+
+## Deploying to a Remote Host
+
+`scripts/deploy-to-proxmox.ps1` is a PowerShell script for redeploying to a host reachable over SSH (written for a Proxmox host but not Proxmox-specific): it locates the `flowarr` checkout on the remote host automatically, runs `git pull`, rebuilds the Docker images, and restarts the containers. Run it from a PowerShell prompt in the repo root:
+
+```powershell
+./scripts/deploy-to-proxmox.ps1 -ProxmoxHost <host-or-ip> -User <ssh-user>
+```
+
+It prompts for the SSH password interactively and never stores credentials. If the remote's `origin` is a private GitHub repo, set up a dedicated deploy key on that host (a fresh keypair added as a read-only GitHub Deploy Key) rather than reusing any existing host identity key.
 
 ## Project Structure
 
@@ -182,10 +203,13 @@ backend/
 frontend/
 docker/
   docker-compose.yml
+scripts/
+  deploy-to-proxmox.ps1
 ```
 
 ## Current Limitations
 
 - Unconfigured integrations return no data.
 - Cleanup real deletion is guarded but still intentionally conservative; keep dry-run enabled unless you have verified roots and paths.
-- Plex and Jellyfin integrations remain future work.
+- Jellyfin integration remains future work (Plex is supported).
+- Cleanup candidate paths depend on Plex and Flowarr resolving the same file paths (see Cleanup Rules above).
