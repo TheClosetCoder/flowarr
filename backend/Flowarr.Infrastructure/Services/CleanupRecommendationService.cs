@@ -28,13 +28,15 @@ public sealed class CleanupRecommendationService(
             await onProgress($"Evaluating {libraryItems.Count} file(s) for staleness and duplicates...");
         }
 
-        var existingPendingPaths = (await dbContext.CleanupCandidates
+        // Tracked (not AsNoTracking) so re-matching an already-pending path below updates the
+        // existing row in place instead of creating a duplicate - this is also what lets a
+        // rescan backfill fields added after a candidate was first created (e.g. series/season).
+        var existingPending = await dbContext.CleanupCandidates
             .Where(candidate => candidate.Status == CleanupStatus.PendingReview)
-            .Select(candidate => candidate.Path)
-            .ToListAsync(cancellationToken))
-            .ToHashSet(StringComparer.Ordinal);
+            .ToDictionaryAsync(candidate => candidate.Path, StringComparer.Ordinal, cancellationToken);
 
-        var candidates = new List<CleanupCandidate>();
+        var newCandidates = new List<CleanupCandidate>();
+        var touchedPaths = new HashSet<string>(StringComparer.Ordinal);
         var byRatingKey = libraryItems.GroupBy(item => item.RatingKey).ToList();
 
         foreach (var group in byRatingKey)
@@ -46,7 +48,7 @@ public sealed class CleanupRecommendationService(
 
             foreach (var duplicate in versions.Skip(1))
             {
-                TryAddCandidate(candidates, existingPendingPaths, duplicate,
+                TryAddCandidate(newCandidates, existingPending, touchedPaths, duplicate,
                     $"Duplicate version of \"{duplicate.Title}\" - this copy is {FormatGb(duplicate.FileSizeBytes)} vs the {FormatGb(kept.FileSizeBytes)} copy being kept.",
                     CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath);
@@ -55,7 +57,7 @@ public sealed class CleanupRecommendationService(
             var staleReason = GetStaleReason(kept, now, staleAfter);
             if (staleReason is not null)
             {
-                TryAddCandidate(candidates, existingPendingPaths, kept, staleReason, CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
+                TryAddCandidate(newCandidates, existingPending, touchedPaths, kept, staleReason, CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Stale, duplicateGroupKey: null, keptPath: null);
             }
         }
@@ -71,12 +73,12 @@ public sealed class CleanupRecommendationService(
         {
             foreach (var item in titleGroup)
             {
-                if (candidates.Any(candidate => candidate.Path == item.FilePath))
+                if (touchedPaths.Contains(item.FilePath))
                 {
                     continue;
                 }
 
-                TryAddCandidate(candidates, existingPendingPaths, item,
+                TryAddCandidate(newCandidates, existingPending, touchedPaths, item,
                     $"Possible duplicate title: \"{item.Title}\" appears under multiple separate Plex entries. Review manually.",
                     CleanupMatchConfidence.Uncertain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Duplicate, $"title:{NormalizeTitle(item.Title)}", keptPath: null);
@@ -85,12 +87,12 @@ public sealed class CleanupRecommendationService(
 
         if (onProgress is not null)
         {
-            await onProgress($"Saving {candidates.Count} candidate(s)...");
+            await onProgress($"Saving {newCandidates.Count} new and {touchedPaths.Count - newCandidates.Count} refreshed candidate(s)...");
         }
 
-        dbContext.CleanupCandidates.AddRange(candidates);
+        dbContext.CleanupCandidates.AddRange(newCandidates);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return candidates;
+        return newCandidates;
     }
 
     private static string? GetStaleReason(PlexLibraryItem item, DateTimeOffset now, TimeSpan staleAfter)
@@ -109,8 +111,9 @@ public sealed class CleanupRecommendationService(
     }
 
     private static void TryAddCandidate(
-        List<CleanupCandidate> candidates,
-        HashSet<string> existingPendingPaths,
+        List<CleanupCandidate> newCandidates,
+        Dictionary<string, CleanupCandidate> existingPending,
+        HashSet<string> touchedPaths,
         PlexLibraryItem item,
         string reason,
         CleanupMatchConfidence confidence,
@@ -121,12 +124,39 @@ public sealed class CleanupRecommendationService(
     {
         // Plex's reported path only resolves to a real file if Plex and Flowarr share the same
         // mount layout - skip rather than present a candidate we can't actually verify or act on.
-        if (existingPendingPaths.Contains(item.FilePath) || !File.Exists(item.FilePath))
+        if (!File.Exists(item.FilePath))
         {
             return;
         }
 
-        candidates.Add(new CleanupCandidate
+        if (!touchedPaths.Add(item.FilePath))
+        {
+            return;
+        }
+
+        if (existingPending.TryGetValue(item.FilePath, out var existing))
+        {
+            // Already a pending candidate from a prior scan - refresh it in place (tracked
+            // entity, so SaveChanges persists this) rather than skipping, so fields added after
+            // the candidate was first created (e.g. series/season) get backfilled on rescan.
+            existing.SizeBytes = item.FileSizeBytes;
+            existing.Reason = reason;
+            existing.Confidence = confidence;
+            existing.DryRun = dryRun;
+            existing.ViewCount = item.ViewCount;
+            existing.LastViewedAt = item.LastViewedAt;
+            existing.AddedAt = item.AddedAt;
+            existing.SeriesTitle = item.SeriesTitle;
+            existing.SeasonNumber = item.SeasonNumber;
+            existing.EpisodeNumber = item.EpisodeNumber;
+            existing.MediaType = item.MediaType;
+            existing.ReasonType = reasonType;
+            existing.DuplicateGroupKey = duplicateGroupKey;
+            existing.KeptPath = keptPath;
+            return;
+        }
+
+        newCandidates.Add(new CleanupCandidate
         {
             Path = item.FilePath,
             SizeBytes = item.FileSizeBytes,
