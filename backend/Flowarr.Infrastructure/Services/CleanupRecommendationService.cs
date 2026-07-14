@@ -6,7 +6,6 @@ using Flowarr.Infrastructure.Data;
 using Flowarr.Infrastructure.Integrations;
 using Flowarr.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Flowarr.Infrastructure.Services;
@@ -15,8 +14,7 @@ public sealed class CleanupRecommendationService(
     FlowarrDbContext dbContext,
     IConnectionSettingsService connectionSettingsService,
     PlexClient plexClient,
-    IOptions<IntegrationOptions> options,
-    ILogger<CleanupRecommendationService> logger) : ICleanupRecommendationService
+    IOptions<IntegrationOptions> options) : ICleanupRecommendationService
 {
     public async Task<IReadOnlyCollection<CleanupCandidate>> GenerateCandidatesAsync(Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
@@ -82,20 +80,6 @@ public sealed class CleanupRecommendationService(
                 File.Exists(duplicate.FilePath) &&
                 (!existingByPath.TryGetValue(duplicate.FilePath, out var existingDuplicate)
                     || existingDuplicate.Status == CleanupStatus.PendingReview));
-
-            if (kept.Title.Contains("Shadow Lord", StringComparison.OrdinalIgnoreCase)
-                || (kept.SeriesTitle?.Contains("Shadow Lord", StringComparison.OrdinalIgnoreCase) ?? false)
-                || kept.FilePath.Contains("Shadow Lord", StringComparison.OrdinalIgnoreCase))
-            {
-                var keptFoundInDb = existingByPath.TryGetValue(kept.FilePath, out var keptRow);
-                logger.LogInformation(
-                    "DEBUG Shadow Lord: ratingKey={RatingKey} versionCount={VersionCount} duplicateCount={DuplicateCount} anyPending={AnyPending} keptPath={KeptPath} keptPathLen={KeptPathLen} keptFoundInDb={KeptFoundInDb} keptDbStatus={KeptDbStatus} keptDbIsSuggestedKeep={KeptDbIsSuggestedKeep} duplicatePaths={DuplicatePaths}",
-                    group.Key, versions.Count, duplicateVersions.Count, anyDuplicateStillPending,
-                    kept.FilePath, kept.FilePath.Length, keptFoundInDb,
-                    keptFoundInDb ? keptRow!.Status.ToString() : "n/a",
-                    keptFoundInDb ? keptRow!.IsSuggestedKeep.ToString() : "n/a",
-                    string.Join(" | ", duplicateVersions.Select(d => $"{d.FilePath} (len={d.FilePath.Length})")));
-            }
 
             foreach (var duplicate in duplicateVersions)
             {
