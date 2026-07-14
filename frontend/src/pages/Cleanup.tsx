@@ -568,10 +568,10 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
   const duplicateTree = groupBySeriesSeason(duplicates);
   const staleTree = groupBySeriesSeason(stale);
 
-  const tabs: { id: Tab; label: string; count: number }[] = [
+  const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "duplicates", label: "Duplicates", count: duplicates.length },
     { id: "stale", label: "Stale / unwatched", count: stale.length },
-    { id: "history", label: "Review history", count: historyCandidates.length }
+    { id: "history", label: "Review history" }
   ];
 
   return (
@@ -612,7 +612,9 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
               }`}
             >
               {tab.label}
-              <span className={`rounded-full px-2 py-0.5 text-xs ${activeTab === tab.id ? "bg-accent text-bg" : "bg-surfaceMuted text-muted"}`}>{tab.count}</span>
+              {typeof tab.count === "number" && (
+                <span className={`rounded-full px-2 py-0.5 text-xs ${activeTab === tab.id ? "bg-accent text-bg" : "bg-surfaceMuted text-muted"}`}>{tab.count}</span>
+              )}
             </button>
           ))}
         </div>
