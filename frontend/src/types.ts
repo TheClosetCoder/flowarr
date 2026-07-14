@@ -30,6 +30,7 @@ export type ActiveTransferSummary = {
   totalBytes: number;
   createdAt: string;
 };
+export type BulkActionResult = { candidateId: string; ok: boolean; error?: string };
 export type CleanupCandidateSummary = {
   id: string;
   path: string;

@@ -162,16 +162,63 @@ public sealed class CleanupRecommendationService(
             return null;
         }
 
+        if (!dryRun && !string.Equals(confirmPath, candidate.Path, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Confirmation path must exactly match the cleanup candidate path.");
+        }
+
+        await ApplyApprovalAsync(candidate, actor, dryRun, bulk: false, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return candidate;
+    }
+
+    public async Task<IReadOnlyCollection<BulkActionResult>> BulkApproveAsync(IReadOnlyCollection<Guid> candidateIds, string actor, bool dryRun, CancellationToken cancellationToken = default)
+    {
+        // Fail fast with one clear error rather than the same "deletion disabled" failure
+        // repeated once per file in the batch.
+        if (!dryRun && !options.Value.Cleanup.AllowDelete)
+        {
+            throw new InvalidOperationException("Real deletion is disabled. Set Flowarr__Cleanup__AllowDelete=true to enable it.");
+        }
+
+        var results = new List<BulkActionResult>();
+        foreach (var candidateId in candidateIds)
+        {
+            var candidate = await dbContext.CleanupCandidates.FindAsync([candidateId], cancellationToken);
+            if (candidate is null)
+            {
+                results.Add(new BulkActionResult(candidateId, false, "Candidate not found."));
+                continue;
+            }
+
+            if (candidate.Status != CleanupStatus.PendingReview)
+            {
+                results.Add(new BulkActionResult(candidateId, false, $"Already {candidate.Status}."));
+                continue;
+            }
+
+            try
+            {
+                await ApplyApprovalAsync(candidate, actor, dryRun, bulk: true, cancellationToken);
+                results.Add(new BulkActionResult(candidateId, true, null));
+            }
+            catch (Exception ex)
+            {
+                results.Add(new BulkActionResult(candidateId, false, ex.Message));
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return results;
+    }
+
+    private async Task ApplyApprovalAsync(CleanupCandidate candidate, string actor, bool dryRun, bool bulk, CancellationToken cancellationToken)
+    {
         if (!dryRun)
         {
             if (!options.Value.Cleanup.AllowDelete)
             {
                 throw new InvalidOperationException("Real deletion is disabled. Set Flowarr__Cleanup__AllowDelete=true to enable it.");
-            }
-
-            if (!string.Equals(confirmPath, candidate.Path, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException("Confirmation path must exactly match the cleanup candidate path.");
             }
 
             if (!await IsInsideAllowedRootAsync(candidate.Path, cancellationToken))
@@ -197,11 +244,10 @@ public sealed class CleanupRecommendationService(
             DryRun = dryRun,
             Details = dryRun
                 ? "Manual approval recorded. No file was deleted because dry-run mode is enabled."
-                : "File deleted after exact path confirmation and allowed-root validation."
+                : bulk
+                    ? "File deleted as part of a bulk action, after allowed-root validation."
+                    : "File deleted after exact path confirmation and allowed-root validation."
         });
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return candidate;
     }
 
     private static void DeleteFile(string path)
@@ -245,6 +291,39 @@ public sealed class CleanupRecommendationService(
             return null;
         }
 
+        ApplyRejection(candidate, actor, bulk: false);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return candidate;
+    }
+
+    public async Task<IReadOnlyCollection<BulkActionResult>> BulkRejectAsync(IReadOnlyCollection<Guid> candidateIds, string actor, CancellationToken cancellationToken = default)
+    {
+        var results = new List<BulkActionResult>();
+        foreach (var candidateId in candidateIds)
+        {
+            var candidate = await dbContext.CleanupCandidates.FindAsync([candidateId], cancellationToken);
+            if (candidate is null)
+            {
+                results.Add(new BulkActionResult(candidateId, false, "Candidate not found."));
+                continue;
+            }
+
+            if (candidate.Status != CleanupStatus.PendingReview)
+            {
+                results.Add(new BulkActionResult(candidateId, false, $"Already {candidate.Status}."));
+                continue;
+            }
+
+            ApplyRejection(candidate, actor, bulk: true);
+            results.Add(new BulkActionResult(candidateId, true, null));
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return results;
+    }
+
+    private void ApplyRejection(CleanupCandidate candidate, string actor, bool bulk)
+    {
         candidate.Status = CleanupStatus.Rejected;
         candidate.ReviewedAt = DateTimeOffset.UtcNow;
         candidate.ReviewedBy = actor;
@@ -257,10 +336,7 @@ public sealed class CleanupRecommendationService(
             Path = candidate.Path,
             Actor = actor,
             DryRun = true,
-            Details = "Cleanup candidate manually rejected."
+            Details = bulk ? "Cleanup candidate rejected as part of a bulk action." : "Cleanup candidate manually rejected."
         });
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return candidate;
     }
 }

@@ -89,7 +89,49 @@ public sealed class CleanupController(
 
         return candidate is null ? NotFound() : Ok(candidate);
     }
+
+    [HttpPost("candidates/bulk-approve")]
+    public async Task<IActionResult> BulkApprove(BulkApproveCleanupRequest request, CancellationToken cancellationToken)
+    {
+        if (request.CandidateIds is not { Length: > 0 })
+        {
+            return BadRequest(new { message = "No candidates specified." });
+        }
+
+        try
+        {
+            var results = await cleanupRecommendationService.BulkApproveAsync(
+                request.CandidateIds,
+                string.IsNullOrWhiteSpace(request.Actor) ? "local-user" : request.Actor,
+                request.DryRun,
+                cancellationToken);
+
+            return Ok(results);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("candidates/bulk-reject")]
+    public async Task<IActionResult> BulkReject(BulkRejectCleanupRequest request, CancellationToken cancellationToken)
+    {
+        if (request.CandidateIds is not { Length: > 0 })
+        {
+            return BadRequest(new { message = "No candidates specified." });
+        }
+
+        var results = await cleanupRecommendationService.BulkRejectAsync(
+            request.CandidateIds,
+            string.IsNullOrWhiteSpace(request.Actor) ? "local-user" : request.Actor,
+            cancellationToken);
+
+        return Ok(results);
+    }
 }
 
 public sealed record ApproveCleanupRequest(string? Actor, bool DryRun = true, string? ConfirmPath = null);
 public sealed record RejectCleanupRequest(string? Actor);
+public sealed record BulkApproveCleanupRequest(string? Actor, bool DryRun, Guid[] CandidateIds);
+public sealed record BulkRejectCleanupRequest(string? Actor, Guid[] CandidateIds);
