@@ -74,7 +74,19 @@ public sealed class CleanupRecommendationService(
                 TryAddCandidate(newCandidates, existingByPath, touchedPaths, duplicate,
                     $"Duplicate version of \"{duplicate.Title}\" - this copy is {FormatGb(duplicate.FileSizeBytes)} vs the {FormatGb(kept.FileSizeBytes)} copy being kept.",
                     CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
-                    CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath);
+                    CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath, isSuggestedKeep: false);
+            }
+
+            if (versions.Count > 1)
+            {
+                // Also surface the largest copy as a candidate in its own group - flagged only as
+                // the suggested keeper, not for deletion - so the user can pick a different copy
+                // to keep instead of being locked into the size-based default.
+                var otherCount = versions.Count - 1;
+                TryAddCandidate(newCandidates, existingByPath, touchedPaths, kept,
+                    $"Largest copy of \"{kept.Title}\" ({FormatGb(kept.FileSizeBytes)}) - suggested to keep over {otherCount} other cop{(otherCount == 1 ? "y" : "ies")}.",
+                    CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
+                    CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath, isSuggestedKeep: true);
             }
 
             var staleReason = GetStaleReason(kept, now, staleAfter);
@@ -143,7 +155,8 @@ public sealed class CleanupRecommendationService(
         bool dryRun,
         CleanupReasonType reasonType,
         string? duplicateGroupKey,
-        string? keptPath)
+        string? keptPath,
+        bool isSuggestedKeep = false)
     {
         // Plex's reported path only resolves to a real file if Plex and Flowarr share the same
         // mount layout - skip rather than present a candidate we can't actually verify or act on.
@@ -184,6 +197,7 @@ public sealed class CleanupRecommendationService(
             existing.ReasonType = reasonType;
             existing.DuplicateGroupKey = duplicateGroupKey;
             existing.KeptPath = keptPath;
+            existing.IsSuggestedKeep = isSuggestedKeep;
             return;
         }
 
@@ -203,7 +217,8 @@ public sealed class CleanupRecommendationService(
             MediaType = item.MediaType,
             ReasonType = reasonType,
             DuplicateGroupKey = duplicateGroupKey,
-            KeptPath = keptPath
+            KeptPath = keptPath,
+            IsSuggestedKeep = isSuggestedKeep
         });
     }
 

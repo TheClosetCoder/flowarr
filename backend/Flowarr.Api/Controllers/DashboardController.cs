@@ -120,7 +120,7 @@ public sealed class DashboardController(
     private async Task<CleanupStats> BuildCleanupStatsAsync(CancellationToken cancellationToken)
     {
         var pending = await dbContext.CleanupCandidates
-            .Where(candidate => candidate.Status == CleanupStatus.PendingReview)
+            .Where(candidate => candidate.Status == CleanupStatus.PendingReview && !candidate.IsSuggestedKeep)
             .GroupBy(candidate => candidate.ReasonType)
             .Select(group => new { ReasonType = group.Key, Count = group.Count(), Bytes = group.Sum(candidate => candidate.SizeBytes) })
             .ToListAsync(cancellationToken);

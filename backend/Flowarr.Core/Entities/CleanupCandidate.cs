@@ -28,4 +28,5 @@ public sealed class CleanupCandidate
     public CleanupReasonType ReasonType { get; set; } = CleanupReasonType.Stale;
     public string? DuplicateGroupKey { get; set; }
     public string? KeptPath { get; set; }
+    public bool IsSuggestedKeep { get; set; }
 }

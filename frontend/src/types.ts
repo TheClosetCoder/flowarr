@@ -48,6 +48,7 @@ export type CleanupCandidateSummary = {
   reasonType?: "Duplicate" | "Stale";
   duplicateGroupKey?: string;
   keptPath?: string;
+  isSuggestedKeep?: boolean;
   status?: string;
 };
 export type CleanupSettings = { staleAfterDays: number; autoGenerateEnabled: boolean; autoGenerateIntervalHours: number };

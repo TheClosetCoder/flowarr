@@ -41,14 +41,14 @@ function groupBySeriesSeason(items: CleanupCandidateSummary[]): SeriesSeasonTree
 }
 
 function groupByDuplicateKey(items: CleanupCandidateSummary[]) {
-  const groups = new Map<string, { keptPath?: string; items: CleanupCandidateSummary[] }>();
+  const groups = new Map<string, { items: CleanupCandidateSummary[] }>();
   for (const item of items) {
     const key = item.duplicateGroupKey ?? item.id;
     const group = groups.get(key);
     if (group) {
       group.items.push(item);
     } else {
-      groups.set(key, { keptPath: item.keptPath, items: [item] });
+      groups.set(key, { items: [item] });
     }
   }
   return Array.from(groups.values());
@@ -60,6 +60,13 @@ function totalBytes(items: CleanupCandidateSummary[]) {
 
 function idsOf(items: CleanupCandidateSummary[]) {
   return items.map((item) => item.id);
+}
+
+// Excludes candidates flagged as the suggested keeper of a duplicate group, so broad
+// "select all" checkboxes (season/series level) can never sweep up a file the system is
+// suggesting to keep - only the per-group picker in renderDuplicateCluster can do that.
+function selectableOf(items: CleanupCandidateSummary[]) {
+  return items.filter((item) => !item.isSuggestedKeep);
 }
 
 type Tab = "duplicates" | "stale" | "history";
@@ -81,6 +88,7 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
   const [bulkMessage, setBulkMessage] = React.useState("");
   const [bulkConfirming, setBulkConfirming] = React.useState(false);
   const [bulkConfirmPhrase, setBulkConfirmPhrase] = React.useState("");
+  const [keepOverrides, setKeepOverrides] = React.useState<Record<string, string>>({});
 
   React.useEffect(() => {
     void fetchJson<CleanupSettings>("/api/cleanup/settings").then((settings) => {
@@ -405,25 +413,48 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
     );
   }
 
-  function renderDuplicateCluster(group: { keptPath?: string; items: CleanupCandidateSummary[] }) {
-    const ids = idsOf(group.items);
-    const key = group.items[0]?.duplicateGroupKey ?? group.items[0]?.id;
+  function renderDuplicateCluster(group: { items: CleanupCandidateSummary[] }) {
+    const key = group.items[0]?.duplicateGroupKey ?? group.items[0]?.id ?? "";
+    const suggested = group.items.find((item) => item.isSuggestedKeep) ?? group.items[0];
+    const keepPath = keepOverrides[key] ?? suggested?.path;
+    const deletable = group.items.filter((item) => item.path !== keepPath);
+    const ids = idsOf(deletable);
+
     return (
       <div key={key} className="rounded-md border border-line p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <label className="flex items-center gap-2 text-xs text-muted">
-            <input type="checkbox" checked={ids.every((id) => selectedIds.has(id))} onChange={() => toggleGroup(ids)} className="h-4 w-4 accent-accent" />
+            <input
+              type="checkbox"
+              checked={ids.length > 0 && ids.every((id) => selectedIds.has(id))}
+              onChange={() => toggleGroup(ids)}
+              className="h-4 w-4 accent-accent"
+            />
             Select all {ids.length} in this group
           </label>
           <span className="text-xs text-muted">{formatBytes(totalBytes(group.items))}</span>
         </div>
-        {group.keptPath && (
-          <div className="mb-3 rounded-md border border-success/30 bg-successMuted px-3 py-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-success">Keeping this location</p>
-            <p className="mt-1 break-all font-mono text-sm text-ink">{group.keptPath}</p>
+        {group.items.length > 1 && (
+          <div className="mb-3 space-y-1.5 rounded-md border border-success/30 bg-successMuted px-3 py-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-success">Choose which copy to keep</p>
+            {group.items.map((item) => (
+              <label key={item.id} className="flex items-start gap-2 text-sm text-ink">
+                <input
+                  type="radio"
+                  name={`keep-${key}`}
+                  checked={item.path === keepPath}
+                  onChange={() => setKeepOverrides((current) => ({ ...current, [key]: item.path }))}
+                  className="mt-1 h-4 w-4 flex-none accent-success"
+                />
+                <span className="min-w-0">
+                  <span className="break-all font-mono text-xs text-ink">{item.path}</span>
+                  <span className="ml-2 text-xs text-muted">{formatBytes(item.sizeBytes)}</span>
+                </span>
+              </label>
+            ))}
           </div>
         )}
-        <div className="space-y-2">{group.items.map(renderCandidateRow)}</div>
+        <div className="space-y-2">{deletable.map(renderCandidateRow)}</div>
       </div>
     );
   }
@@ -436,7 +467,7 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
     return (
       <div className="space-y-2">
         {tree.series.map((seriesGroup) => {
-          const allSeriesIds = seriesGroup.seasons.flatMap((season) => idsOf(season.items));
+          const allSeriesIds = seriesGroup.seasons.flatMap((season) => idsOf(selectableOf(season.items)));
           const seriesItems = seriesGroup.seasons.flatMap((season) => season.items);
           return (
             <details key={seriesGroup.title} className="rounded-md border border-line p-3">
@@ -459,7 +490,7 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
               </summary>
               <div className="mt-3 space-y-2 pl-2">
                 {seriesGroup.seasons.map((season) => {
-                  const seasonIds = idsOf(season.items);
+                  const seasonIds = idsOf(selectableOf(season.items));
                   return (
                     <details key={season.season} className="rounded-md border border-line/60 p-2">
                       <summary className="flex cursor-pointer items-center justify-between gap-2 text-sm text-ink">
@@ -486,7 +517,10 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
         })}
         {tree.movies.length > 0 && (
           <div className="rounded-md border border-line p-3">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Movies</p>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
+              Movies &amp; ungrouped
+              <span className="ml-2 font-normal normal-case text-muted/70">Plex didn't report a show/season for these - includes real movies and any TV episode Plex returned without series info.</span>
+            </p>
             {renderLeaf(tree.movies)}
           </div>
         )}
@@ -564,12 +598,13 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
   }
 
   const duplicates = candidates.filter((item) => item.reasonType === "Duplicate");
+  const duplicatesDeletable = duplicates.filter((item) => !item.isSuggestedKeep);
   const stale = candidates.filter((item) => item.reasonType !== "Duplicate");
   const duplicateTree = groupBySeriesSeason(duplicates);
   const staleTree = groupBySeriesSeason(stale);
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
-    { id: "duplicates", label: "Duplicates", count: duplicates.length },
+    { id: "duplicates", label: "Duplicates", count: duplicatesDeletable.length },
     { id: "stale", label: "Stale / unwatched", count: stale.length },
     { id: "history", label: "Review history" }
   ];
@@ -626,7 +661,7 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
           <Card>
             <CardHeader
               title="Possible duplicates"
-              description={`${duplicates.length} file(s), ${formatBytes(totalBytes(duplicates))} reclaimable`}
+              description={`${duplicatesDeletable.length} file(s), ${formatBytes(totalBytes(duplicatesDeletable))} reclaimable`}
               action={<Copy size={18} className="text-muted" />}
             />
             {renderSeriesSeasonTree(duplicateTree, (items) => (
