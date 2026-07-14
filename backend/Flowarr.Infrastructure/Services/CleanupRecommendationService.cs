@@ -74,10 +74,14 @@ public sealed class CleanupRecommendationService(
 
             // Whether at least one sibling copy is still awaiting a decision. A sibling that was
             // rejected (kept on disk, decision recorded) or deleted no longer needs action, so it
-            // shouldn't keep the group's "suggested keep" marker alive on its own.
+            // shouldn't keep the group's "suggested keep" marker alive on its own. Deleted rows
+            // are excluded from existingByPath, so a deleted sibling looks "not found" here - the
+            // File.Exists check is what actually distinguishes that from a genuinely new,
+            // never-seen-before duplicate (which is also "not found" but very much still pending).
             var anyDuplicateStillPending = duplicateVersions.Any(duplicate =>
-                !existingByPath.TryGetValue(duplicate.FilePath, out var existingDuplicate)
-                || existingDuplicate.Status == CleanupStatus.PendingReview);
+                File.Exists(duplicate.FilePath) &&
+                (!existingByPath.TryGetValue(duplicate.FilePath, out var existingDuplicate)
+                    || existingDuplicate.Status == CleanupStatus.PendingReview));
 
             if (kept.Title.Contains("Shadow Lord", StringComparison.OrdinalIgnoreCase)
                 || (kept.SeriesTitle?.Contains("Shadow Lord", StringComparison.OrdinalIgnoreCase) ?? false)
