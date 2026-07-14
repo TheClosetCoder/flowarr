@@ -61,6 +61,7 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
   const [confirmText, setConfirmText] = React.useState("");
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  const [rowErrors, setRowErrors] = React.useState<Record<string, string>>({});
   const [generatingJobId, setGeneratingJobId] = React.useState<string | null>(null);
   const [showHistory, setShowHistory] = React.useState(false);
   const [historyCandidates, setHistoryCandidates] = React.useState<CleanupCandidateSummary[]>([]);
@@ -136,31 +137,56 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
     setCandidates(await fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates?status=PendingReview"));
   }
 
+  function clearRowError(id: string) {
+    setRowErrors((current) => {
+      if (!(id in current)) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }
+
+  function setRowError(id: string, error: unknown, fallback: string) {
+    setRowErrors((current) => ({ ...current, [id]: error instanceof Error ? error.message : fallback }));
+  }
+
   async function approveDryRun(id: string) {
-    await postJson(`/api/cleanup/candidates/${id}/approve`, { actor: "admin", dryRun: true });
-    await refreshCandidates();
-    setMessage("Dry-run approval recorded. No file was deleted.");
+    try {
+      await postJson(`/api/cleanup/candidates/${id}/approve`, { actor: "admin", dryRun: true });
+      clearRowError(id);
+      await refreshCandidates();
+      setMessage("Dry-run approval recorded. No file was deleted.");
+    } catch (error) {
+      setRowError(id, error, "Approve failed.");
+    }
   }
 
   async function confirmDelete(item: CleanupCandidateSummary) {
     try {
       await postJson(`/api/cleanup/candidates/${item.id}/approve`, { actor: "admin", dryRun: false, confirmPath: confirmText });
+      clearRowError(item.id);
       await refreshCandidates();
       setMessage("File deleted.");
       setConfirmingId(null);
       setConfirmText("");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Delete failed.");
+      setRowError(item.id, error, "Delete failed.");
     }
   }
 
   async function reject(id: string) {
-    await postJson(`/api/cleanup/candidates/${id}/reject`, { actor: "admin" });
-    await refreshCandidates();
-    setMessage("Candidate rejected.");
+    try {
+      await postJson(`/api/cleanup/candidates/${id}/reject`, { actor: "admin" });
+      clearRowError(id);
+      await refreshCandidates();
+      setMessage("Candidate rejected.");
+    } catch (error) {
+      setRowError(id, error, "Reject failed.");
+    }
   }
 
   function renderActions(item: CleanupCandidateSummary) {
+    const rowError = rowErrors[item.id];
     return (
       <div className="mt-3 space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-sm text-ink">
@@ -174,6 +200,7 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
                 setConfirmingId(item.id);
                 setConfirmText("");
                 setCopiedId(null);
+                clearRowError(item.id);
               }}
               className="rounded-md border border-danger px-3 py-1 text-danger hover:bg-dangerMuted"
             >
@@ -181,6 +208,9 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
             </button>
           )}
         </div>
+        {rowError && confirmingId !== item.id && (
+          <p className="rounded-md border border-danger/50 bg-dangerMuted px-3 py-2 text-sm text-danger">{rowError}</p>
+        )}
         {confirmingId === item.id && (
           <div className="rounded-md border border-danger/50 bg-dangerMuted p-3">
             <p className="text-xs font-medium uppercase tracking-wide text-danger">This exact location will be deleted</p>
@@ -219,6 +249,7 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
                 Cancel
               </button>
             </div>
+            {rowError && <p className="mt-2 text-sm text-danger">{rowError}</p>}
           </div>
         )}
       </div>
