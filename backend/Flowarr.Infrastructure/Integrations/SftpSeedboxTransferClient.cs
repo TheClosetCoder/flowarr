@@ -247,6 +247,10 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
         var previousBytes = 0UL;
         client.DownloadFile(remotePath, output, bytesDownloaded =>
         {
+            // SSH.NET's DownloadFile has no cancellation token of its own; throwing from inside
+            // this periodically-invoked callback is what actually interrupts it mid-file.
+            cancellationToken.ThrowIfCancellationRequested();
+
             // downloadCallback reports bytes downloaded so far for this file, not a delta.
             var delta = (long)(bytesDownloaded - previousBytes);
             previousBytes = bytesDownloaded;

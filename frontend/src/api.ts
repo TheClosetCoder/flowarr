@@ -27,6 +27,16 @@ export async function postJson<T>(path: string, body?: unknown): Promise<T> {
   return response.json();
 }
 
+export async function postEmpty(path: string) {
+  const response = await fetch(`${apiBase}${path}`, { method: "POST", credentials: "include" });
+  if (!response.ok) throw new Error(await getErrorMessage(response, path));
+}
+
+export async function deleteJson(path: string) {
+  const response = await fetch(`${apiBase}${path}`, { method: "DELETE", credentials: "include" });
+  if (!response.ok) throw new Error(await getErrorMessage(response, path));
+}
+
 async function getErrorMessage(response: Response, path: string) {
   const body = await response.text();
   if (!body) return `Request failed: ${path} (${response.status})`;

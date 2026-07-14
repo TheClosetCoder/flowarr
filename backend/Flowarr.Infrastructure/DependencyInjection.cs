@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddScoped<IConnectionTestService, ConnectionTestService>();
         services.AddScoped<ICleanupRecommendationService, CleanupRecommendationService>();
         services.AddScoped<IStorageSyncService, StorageSyncService>();
+        services.AddSingleton<IActiveTransferCancellationRegistry, ActiveTransferCancellationRegistry>();
         services.AddScoped<IDownloadClient, QBittorrentDownloadClient>();
         services.AddScoped<ArrMediaCatalogClient>();
         services.AddScoped<IMediaCatalogClient>(provider => provider.GetRequiredService<ArrMediaCatalogClient>());

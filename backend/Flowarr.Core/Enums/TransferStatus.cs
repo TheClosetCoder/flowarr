@@ -6,5 +6,6 @@ public enum TransferStatus
     Running = 1,
     Completed = 2,
     Skipped = 3,
-    Failed = 4
+    Failed = 4,
+    Cancelled = 5
 }

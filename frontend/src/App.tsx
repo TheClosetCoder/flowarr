@@ -159,11 +159,11 @@ export function App() {
             }}
           />
 
-          {activePage === "Dashboard" && <Dashboard dashboard={dashboard} transfers={transfers} />}
+          {activePage === "Dashboard" && <Dashboard dashboard={dashboard} transfers={transfers} setTransfers={setTransfers} />}
           {activePage === "Connections" && <Connections settings={connectionSettings} error={settingsError} activeTab={connectionTab} onTabChange={setConnectionTab} onSaved={refreshSettings} />}
           {activePage === "Storage" && <Storage storage={storage} setStorage={setStorage} />}
           {activePage === "Downloads" && <Downloads downloads={downloads} />}
-          {activePage === "Transfers" && <Transfers transfers={transfers} settings={transferSettings} />}
+          {activePage === "Transfers" && <Transfers transfers={transfers} settings={transferSettings} setTransfers={setTransfers} />}
           {activePage === "Cleanup" && <Cleanup candidates={candidates} setCandidates={setCandidates} />}
           {activePage === "Settings" && <SettingsPanel transferSettings={transferSettings} jobs={jobs} />}
         </div>

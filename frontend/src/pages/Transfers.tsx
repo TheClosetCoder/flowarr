@@ -1,12 +1,35 @@
 import { FolderDown } from "lucide-react";
+import { deleteJson, fetchJson, postEmpty } from "../api";
 import { Card, CardHeader } from "../components/Card";
 import { Metric } from "../components/Metric";
 import { ActivityRow } from "../components/ActivityRow";
 import { EmptyState } from "../components/EmptyState";
-import { getDisplayTitle } from "../format";
+import { getDisplayTitle, isTransferActive } from "../format";
 import type { RemoteTransfer, TransferSettings } from "../types";
 
-export function Transfers({ transfers, settings }: { transfers: RemoteTransfer[]; settings: TransferSettings | null }) {
+export function Transfers({
+  transfers,
+  settings,
+  setTransfers
+}: {
+  transfers: RemoteTransfer[];
+  settings: TransferSettings | null;
+  setTransfers: (items: RemoteTransfer[]) => void;
+}) {
+  async function cancelOrRemove(item: RemoteTransfer) {
+    if (item.status === "Running" && !window.confirm(`Cancel "${getDisplayTitle(item.remotePath, item.localPath)}"? The partially downloaded file will be deleted.`)) {
+      return;
+    }
+
+    if (isTransferActive(item)) {
+      await postEmpty(`/api/transfers/${item.id}/cancel`);
+    } else {
+      await deleteJson(`/api/transfers/${item.id}`);
+    }
+
+    setTransfers(await fetchJson<RemoteTransfer[]>("/api/transfers"));
+  }
+
   return (
     <section className="space-y-4">
       <div className="grid gap-4 md:grid-cols-3">
@@ -26,6 +49,7 @@ export function Transfers({ transfers, settings }: { transfers: RemoteTransfer[]
                 bytesTransferred={item.bytesTransferred}
                 totalBytes={item.totalBytes}
                 message={item.message}
+                onCancel={() => void cancelOrRemove(item)}
               />
             ))}
           </div>

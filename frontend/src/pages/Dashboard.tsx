@@ -1,4 +1,5 @@
 import { Download, HardDrive, ImportIcon, Server, Trash2 } from "lucide-react";
+import { fetchJson, postEmpty } from "../api";
 import { Card, CardHeader } from "../components/Card";
 import { EmptyState } from "../components/EmptyState";
 import { Metric } from "../components/Metric";
@@ -7,10 +8,27 @@ import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes, formatRelativeTime, getDisplayTitle, isTransferActive } from "../format";
 import type { DashboardSummary, RemoteTransfer } from "../types";
 
-export function Dashboard({ dashboard, transfers }: { dashboard: DashboardSummary | null; transfers: RemoteTransfer[] }) {
+export function Dashboard({
+  dashboard,
+  transfers,
+  setTransfers
+}: {
+  dashboard: DashboardSummary | null;
+  transfers: RemoteTransfer[];
+  setTransfers: (items: RemoteTransfer[]) => void;
+}) {
   const activeTransfers = transfers.filter(isTransferActive);
   const torrentDownloading = (dashboard?.downloads ?? []).filter((item) => item.status === "Downloading").length;
   const activeCount = activeTransfers.length + torrentDownloading;
+
+  async function cancelTransfer(transfer: RemoteTransfer) {
+    if (transfer.status === "Running" && !window.confirm(`Cancel "${getDisplayTitle(transfer.remotePath, transfer.localPath)}"? The partially downloaded file will be deleted.`)) {
+      return;
+    }
+
+    await postEmpty(`/api/transfers/${transfer.id}/cancel`);
+    setTransfers(await fetchJson<RemoteTransfer[]>("/api/transfers"));
+  }
 
   return (
     <section className="space-y-5">
@@ -32,6 +50,7 @@ export function Dashboard({ dashboard, transfers }: { dashboard: DashboardSummar
                 status={transfer.status}
                 bytesTransferred={transfer.bytesTransferred}
                 totalBytes={transfer.totalBytes}
+                onCancel={() => void cancelTransfer(transfer)}
               />
             ))}
           </div>

@@ -2,7 +2,7 @@ import React from "react";
 import { Film } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import { ProgressBar } from "./ProgressBar";
-import { formatBytes, getTransferProgress } from "../format";
+import { formatBytes, getTransferProgress, isTransferActive } from "../format";
 
 export function ActivityRow({
   title,
@@ -10,7 +10,8 @@ export function ActivityRow({
   bytesTransferred,
   totalBytes,
   message,
-  icon: Icon = Film
+  icon: Icon = Film,
+  onCancel
 }: {
   title: string;
   status: string;
@@ -18,6 +19,7 @@ export function ActivityRow({
   totalBytes: number;
   message?: string;
   icon?: React.ComponentType<{ size?: number }>;
+  onCancel?: () => void;
 }) {
   const progress = getTransferProgress({ status, bytesTransferred, totalBytes });
 
@@ -29,7 +31,18 @@ export function ActivityRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{title}</p>
-          <StatusBadge status={status} />
+          <div className="flex items-center gap-2">
+            <StatusBadge status={status} />
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="rounded-md border border-line px-2 py-1 text-xs text-muted hover:border-danger hover:text-danger"
+              >
+                {isTransferActive({ status }) ? "Cancel" : "Remove"}
+              </button>
+            )}
+          </div>
         </div>
         <div className="mt-2">
           <ProgressBar value={progress} />

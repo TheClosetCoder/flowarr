@@ -11,6 +11,7 @@ namespace Flowarr.Infrastructure.Services;
 
 public sealed class AutoDownloadHostedService(
     IServiceScopeFactory scopeFactory,
+    IActiveTransferCancellationRegistry cancellationRegistry,
     ILogger<AutoDownloadHostedService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -143,11 +144,14 @@ public sealed class AutoDownloadHostedService(
         transfer.StartedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        var cancelToken = cancellationRegistry.Register(transfer.Id);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cancelToken);
+
         try
         {
             if (transfer.TotalBytes == 0)
             {
-                transfer.TotalBytes = await transferClient.GetSizeAsync(transfer.RemotePath, cancellationToken);
+                transfer.TotalBytes = await transferClient.GetSizeAsync(transfer.RemotePath, linkedCts.Token);
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
 
@@ -167,7 +171,7 @@ public sealed class AutoDownloadHostedService(
                 dbContext.SaveChanges();
             });
 
-            var result = await transferClient.DownloadAsync(transfer.RemotePath, transferRule.LocalPath, progress, cancellationToken);
+            var result = await transferClient.DownloadAsync(transfer.RemotePath, transferRule.LocalPath, progress, linkedCts.Token);
             transfer.BytesTransferred = result.BytesTransferred;
             transfer.LocalPath = result.LocalPath;
             transfer.Status = result.Skipped ? TransferStatus.Skipped : TransferStatus.Completed;
@@ -215,6 +219,24 @@ public sealed class AutoDownloadHostedService(
                 transfer.Message = $"{transfer.Message} Remote source deleted.";
             }
         }
+        catch (OperationCanceledException) when (cancelToken.IsCancellationRequested)
+        {
+            transfer.Status = TransferStatus.Cancelled;
+            transfer.Message = "Cancelled by user.";
+            transfer.CompletedAt = DateTimeOffset.UtcNow;
+            DeletePartialLocalContent(transferRule, transfer);
+
+            dbContext.AuditLogs.Add(new AuditLog
+            {
+                Action = "transfer.cancelled",
+                TargetType = nameof(RemoteTransfer),
+                TargetId = transfer.Id,
+                Path = transfer.RemotePath,
+                Actor = "user",
+                DryRun = false,
+                Details = "Transfer cancelled by user; partial local file removed if present."
+            });
+        }
         catch (Exception ex)
         {
             transfer.Status = TransferStatus.Failed;
@@ -232,8 +254,34 @@ public sealed class AutoDownloadHostedService(
                 Details = ex.Message
             });
         }
+        finally
+        {
+            cancellationRegistry.Unregister(transfer.Id);
+        }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private void DeletePartialLocalContent(TransferRuleSettings transferRule, RemoteTransfer transfer)
+    {
+        // Matches the naming convention SftpSeedboxTransferClient.DownloadDirectory uses for its
+        // top-level destination folder/file - best-effort, since the goal is just reclaiming space.
+        var candidatePath = Path.Combine(transferRule.LocalPath, Path.GetFileName(transfer.RemotePath.TrimEnd('/')));
+        try
+        {
+            if (Directory.Exists(candidatePath))
+            {
+                Directory.Delete(candidatePath, recursive: true);
+            }
+            else if (File.Exists(candidatePath))
+            {
+                File.Delete(candidatePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to delete partial local content for cancelled transfer {TransferId} at {Path}", transfer.Id, candidatePath);
+        }
     }
 
     private async Task TryDownloadAsync(
@@ -285,7 +333,7 @@ public sealed class AutoDownloadHostedService(
     {
         var existing = await dbContext.RemoteTransfers.FirstOrDefaultAsync(transfer =>
             transfer.RemotePath == remotePath &&
-            (transfer.Status == TransferStatus.Queued || transfer.Status == TransferStatus.Running || transfer.Status == TransferStatus.Completed || transfer.Status == TransferStatus.Skipped),
+            (transfer.Status == TransferStatus.Queued || transfer.Status == TransferStatus.Running || transfer.Status == TransferStatus.Completed || transfer.Status == TransferStatus.Skipped || transfer.Status == TransferStatus.Cancelled),
             cancellationToken);
 
         if (existing is not null)

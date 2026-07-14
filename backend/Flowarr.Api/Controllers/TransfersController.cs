@@ -1,3 +1,4 @@
+using Flowarr.Core.Enums;
 using Flowarr.Infrastructure.Data;
 using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +10,8 @@ namespace Flowarr.Api.Controllers;
 [Route("api/transfers")]
 public sealed class TransfersController(
     FlowarrDbContext dbContext,
-    IConnectionSettingsService connectionSettingsService) : ControllerBase
+    IConnectionSettingsService connectionSettingsService,
+    IActiveTransferCancellationRegistry cancellationRegistry) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -20,6 +22,55 @@ public sealed class TransfersController(
             .ToListAsync(cancellationToken);
 
         return Ok(transfers);
+    }
+
+    [HttpPost("{id:guid}/cancel")]
+    public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
+    {
+        var transfer = await dbContext.RemoteTransfers.FindAsync([id], cancellationToken);
+        if (transfer is null)
+        {
+            return NotFound();
+        }
+
+        switch (transfer.Status)
+        {
+            case TransferStatus.Queued:
+                dbContext.RemoteTransfers.Remove(transfer);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return NoContent();
+
+            case TransferStatus.Running:
+                var cancelled = cancellationRegistry.Cancel(id);
+                if (!cancelled)
+                {
+                    return Conflict(new { message = "This transfer is no longer running." });
+                }
+
+                return Accepted();
+
+            default:
+                return BadRequest(new { message = $"Cannot cancel a transfer with status {transfer.Status}." });
+        }
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        var transfer = await dbContext.RemoteTransfers.FindAsync([id], cancellationToken);
+        if (transfer is null)
+        {
+            return NotFound();
+        }
+
+        if (transfer.Status == TransferStatus.Running)
+        {
+            return BadRequest(new { message = "Cancel the transfer before removing it." });
+        }
+
+        dbContext.RemoteTransfers.Remove(transfer);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return NoContent();
     }
 
     [HttpGet("settings")]
