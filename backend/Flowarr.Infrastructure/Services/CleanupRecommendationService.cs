@@ -77,6 +77,7 @@ public sealed class CleanupRecommendationService(
                     CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath, isSuggestedKeep: false);
             }
 
+            CleanupCandidate? leftoverKeepMarker = null;
             if (versions.Count > 1)
             {
                 // Also surface the largest copy as a candidate in its own group - flagged only as
@@ -88,12 +89,26 @@ public sealed class CleanupRecommendationService(
                     CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath, isSuggestedKeep: true);
             }
+            else if (existingByPath.TryGetValue(kept.FilePath, out var existingKept)
+                && existingKept.Status == CleanupStatus.PendingReview
+                && existingKept.IsSuggestedKeep)
+            {
+                // This file used to have other copies flagged as duplicates (hence the leftover
+                // "suggested keep" marker), but they're gone now (deleted/resolved) and it's back
+                // to a single version - the marker no longer means anything. Remove it unless the
+                // staleness check below reclaims the same row for a real reason.
+                leftoverKeepMarker = existingKept;
+            }
 
             var staleReason = GetStaleReason(kept, now, staleAfter);
             if (staleReason is not null)
             {
                 TryAddCandidate(newCandidates, existingByPath, touchedPaths, kept, staleReason, CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Stale, duplicateGroupKey: null, keptPath: null);
+            }
+            else if (leftoverKeepMarker is not null)
+            {
+                dbContext.CleanupCandidates.Remove(leftoverKeepMarker);
             }
         }
 
