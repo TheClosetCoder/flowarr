@@ -1,5 +1,5 @@
 import React from "react";
-import { ShieldCheck } from "lucide-react";
+import { FlowarrMark } from "../components/FlowarrMark";
 import { postJson } from "../api";
 import { Input } from "../components/Input";
 
@@ -23,7 +23,7 @@ export function AuthScreen({ setupRequired, onAuthenticated }: { setupRequired: 
       <div className="w-full max-w-sm rounded-lg border border-line bg-surface p-5">
         <div className="mb-5 flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-md bg-accent text-bg">
-            <ShieldCheck size={21} />
+            <FlowarrMark size={21} />
           </div>
           <div>
             <h1 className="text-lg font-semibold text-ink">Flowarr</h1>

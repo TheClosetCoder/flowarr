@@ -1,5 +1,5 @@
 import React from "react";
-import { ShieldCheck } from "lucide-react";
+import { FlowarrMark } from "./FlowarrMark";
 
 export type PageDefinition = { name: string; icon: React.ComponentType<{ size?: number }> };
 
@@ -8,7 +8,7 @@ export function Sidebar({ pages, activePage, onNavigate }: { pages: PageDefiniti
     <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-line bg-surface px-4 py-5 lg:block">
       <div className="mb-8 flex items-center gap-3">
         <div className="grid h-10 w-10 place-items-center rounded-md bg-accent text-bg">
-          <ShieldCheck size={22} />
+          <FlowarrMark size={22} />
         </div>
         <div>
           <h1 className="text-xl font-semibold text-ink">Flowarr</h1>
