@@ -28,11 +28,14 @@ public sealed class CleanupRecommendationService(
             await onProgress($"Evaluating {libraryItems.Count} file(s) for staleness and duplicates...");
         }
 
-        // Tracked (not AsNoTracking) so re-matching an already-pending path below updates the
-        // existing row in place instead of creating a duplicate - this is also what lets a
-        // rescan backfill fields added after a candidate was first created (e.g. series/season).
-        var existingPending = await dbContext.CleanupCandidates
-            .Where(candidate => candidate.Status == CleanupStatus.PendingReview)
+        // Tracked (not AsNoTracking) so re-matching an already-known path below updates the
+        // existing row in place instead of creating a duplicate. Includes Approved/Rejected/
+        // Failed, not just PendingReview: those statuses mean a decision was recorded but the
+        // file is still on disk (dry-run approve, reject, or a failed real delete), so a rescan
+        // must not re-flag them as a fresh pending candidate and forget the decision. Deleted
+        // candidates are excluded - the file is gone, so a rematch there can't happen anyway.
+        var existingByPath = await dbContext.CleanupCandidates
+            .Where(candidate => candidate.Status != CleanupStatus.Deleted)
             .ToDictionaryAsync(candidate => candidate.Path, StringComparer.Ordinal, cancellationToken);
 
         var newCandidates = new List<CleanupCandidate>();
@@ -48,7 +51,7 @@ public sealed class CleanupRecommendationService(
 
             foreach (var duplicate in versions.Skip(1))
             {
-                TryAddCandidate(newCandidates, existingPending, touchedPaths, duplicate,
+                TryAddCandidate(newCandidates, existingByPath, touchedPaths, duplicate,
                     $"Duplicate version of \"{duplicate.Title}\" - this copy is {FormatGb(duplicate.FileSizeBytes)} vs the {FormatGb(kept.FileSizeBytes)} copy being kept.",
                     CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath);
@@ -57,7 +60,7 @@ public sealed class CleanupRecommendationService(
             var staleReason = GetStaleReason(kept, now, staleAfter);
             if (staleReason is not null)
             {
-                TryAddCandidate(newCandidates, existingPending, touchedPaths, kept, staleReason, CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
+                TryAddCandidate(newCandidates, existingByPath, touchedPaths, kept, staleReason, CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Stale, duplicateGroupKey: null, keptPath: null);
             }
         }
@@ -78,7 +81,7 @@ public sealed class CleanupRecommendationService(
                     continue;
                 }
 
-                TryAddCandidate(newCandidates, existingPending, touchedPaths, item,
+                TryAddCandidate(newCandidates, existingByPath, touchedPaths, item,
                     $"Possible duplicate title: \"{item.Title}\" appears under multiple separate Plex entries. Review manually.",
                     CleanupMatchConfidence.Uncertain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Duplicate, $"title:{NormalizeTitle(item.Title)}", keptPath: null);
@@ -112,7 +115,7 @@ public sealed class CleanupRecommendationService(
 
     private static void TryAddCandidate(
         List<CleanupCandidate> newCandidates,
-        Dictionary<string, CleanupCandidate> existingPending,
+        Dictionary<string, CleanupCandidate> existingByPath,
         HashSet<string> touchedPaths,
         PlexLibraryItem item,
         string reason,
@@ -134,8 +137,16 @@ public sealed class CleanupRecommendationService(
             return;
         }
 
-        if (existingPending.TryGetValue(item.FilePath, out var existing))
+        if (existingByPath.TryGetValue(item.FilePath, out var existing))
         {
+            if (existing.Status != CleanupStatus.PendingReview)
+            {
+                // A decision (approve dry-run / reject / a failed real delete) was already
+                // recorded for this path and the file is still on disk. Leave the row - and the
+                // decision - alone; do not resurrect it as a new pending candidate.
+                return;
+            }
+
             // Already a pending candidate from a prior scan - refresh it in place (tracked
             // entity, so SaveChanges persists this) rather than skipping, so fields added after
             // the candidate was first created (e.g. series/season) get backfilled on rescan.
