@@ -79,7 +79,9 @@ public sealed class CleanupRecommendationService(
                 !existingByPath.TryGetValue(duplicate.FilePath, out var existingDuplicate)
                 || existingDuplicate.Status == CleanupStatus.PendingReview);
 
-            if (kept.Title.Contains("Shadow Lord", StringComparison.OrdinalIgnoreCase))
+            if (kept.Title.Contains("Shadow Lord", StringComparison.OrdinalIgnoreCase)
+                || (kept.SeriesTitle?.Contains("Shadow Lord", StringComparison.OrdinalIgnoreCase) ?? false)
+                || kept.FilePath.Contains("Shadow Lord", StringComparison.OrdinalIgnoreCase))
             {
                 var keptFoundInDb = existingByPath.TryGetValue(kept.FilePath, out var keptRow);
                 logger.LogInformation(

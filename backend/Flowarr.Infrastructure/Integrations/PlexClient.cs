@@ -94,10 +94,13 @@ public sealed class PlexClient(
 
                             foreach (var episode in leaves)
                             {
-                                var title = string.IsNullOrWhiteSpace(episode.GrandparentTitle) ? episode.Title : $"{episode.GrandparentTitle} - {episode.Title}";
                                 // Plex returns "" (not null) for grandparentTitle on some episodes -
-                                // "??" doesn't catch that, so use the same blank check as above.
+                                // "??" doesn't catch that, so fall back to the show's own title
+                                // (from the /all listing, always populated) via an explicit blank
+                                // check. Derive the combined display title from the same
+                                // fallback so it doesn't silently drop the show name too.
                                 var seriesTitle = string.IsNullOrWhiteSpace(episode.GrandparentTitle) ? show.Title : episode.GrandparentTitle;
+                                var title = string.IsNullOrWhiteSpace(seriesTitle) ? episode.Title : $"{seriesTitle} - {episode.Title}";
                                 var episodeItems = ToLibraryItems(episode, title, "episode", seriesTitle).ToList();
                                 if (episodeItems.Count == 0)
                                 {
