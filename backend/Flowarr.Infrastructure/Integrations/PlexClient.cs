@@ -90,10 +90,22 @@ public sealed class PlexClient(
                             }
 
                             var episodesResponse = await client.GetFromJsonAsync<PlexMetadataResponse>($"library/metadata/{show.RatingKey}/allLeaves", cancellationToken);
-                            foreach (var episode in episodesResponse?.MediaContainer?.Metadata ?? [])
+                            var leaves = episodesResponse?.MediaContainer?.Metadata ?? [];
+                            logger.LogInformation("Plex show {ShowTitle} (ratingKey {RatingKey}): allLeaves returned {Count} episode(s)", show.Title, show.RatingKey, leaves.Count);
+
+                            foreach (var episode in leaves)
                             {
                                 var title = string.IsNullOrWhiteSpace(episode.GrandparentTitle) ? episode.Title : $"{episode.GrandparentTitle} - {episode.Title}";
-                                items.AddRange(ToLibraryItems(episode, title, "episode", episode.GrandparentTitle ?? show.Title));
+                                var seriesTitle = episode.GrandparentTitle ?? show.Title;
+                                var episodeItems = ToLibraryItems(episode, title, "episode", seriesTitle).ToList();
+                                if (episodeItems.Count == 0)
+                                {
+                                    logger.LogWarning(
+                                        "Plex episode {RatingKey} ({Title}, S{Season}E{Episode}) under show {ShowTitle} had no Media/Part file info in this response - skipped",
+                                        episode.RatingKey, episode.Title, episode.ParentIndex, episode.Index, show.Title);
+                                }
+
+                                items.AddRange(episodeItems);
                             }
                         }
                         catch (Exception ex)
