@@ -415,9 +415,12 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
 
   function renderDuplicateCluster(group: { items: CleanupCandidateSummary[] }) {
     const key = group.items[0]?.duplicateGroupKey ?? group.items[0]?.id ?? "";
-    const suggested = group.items.find((item) => item.isSuggestedKeep) ?? group.items[0];
-    const keepPath = keepOverrides[key] ?? suggested?.path;
-    const deletable = group.items.filter((item) => item.path !== keepPath);
+    // Only exclude a "kept" item when there's actually more than one candidate to choose
+    // between - a lone survivor (its siblings already resolved elsewhere) has nothing to be
+    // "kept over" and should still show as a normal actionable duplicate, not vanish.
+    const suggested = group.items.length > 1 ? group.items.find((item) => item.isSuggestedKeep) ?? group.items[0] : undefined;
+    const keepPath = group.items.length > 1 ? keepOverrides[key] ?? suggested?.path : undefined;
+    const deletable = keepPath ? group.items.filter((item) => item.path !== keepPath) : group.items;
     const ids = idsOf(deletable);
 
     return (

@@ -68,8 +68,16 @@ public sealed class CleanupRecommendationService(
             // entries under one item - keep the largest (best-quality proxy), flag the rest.
             var versions = group.OrderByDescending(item => item.FileSizeBytes).ToList();
             var kept = versions[0];
+            var duplicateVersions = versions.Skip(1).ToList();
 
-            foreach (var duplicate in versions.Skip(1))
+            // Whether at least one sibling copy is still awaiting a decision. A sibling that was
+            // rejected (kept on disk, decision recorded) or deleted no longer needs action, so it
+            // shouldn't keep the group's "suggested keep" marker alive on its own.
+            var anyDuplicateStillPending = duplicateVersions.Any(duplicate =>
+                !existingByPath.TryGetValue(duplicate.FilePath, out var existingDuplicate)
+                || existingDuplicate.Status == CleanupStatus.PendingReview);
+
+            foreach (var duplicate in duplicateVersions)
             {
                 TryAddCandidate(newCandidates, existingByPath, touchedPaths, duplicate,
                     $"Duplicate version of \"{duplicate.Title}\" - this copy is {FormatGb(duplicate.FileSizeBytes)} vs the {FormatGb(kept.FileSizeBytes)} copy being kept.",
@@ -78,12 +86,12 @@ public sealed class CleanupRecommendationService(
             }
 
             CleanupCandidate? leftoverKeepMarker = null;
-            if (versions.Count > 1)
+            if (duplicateVersions.Count > 0 && anyDuplicateStillPending)
             {
                 // Also surface the largest copy as a candidate in its own group - flagged only as
                 // the suggested keeper, not for deletion - so the user can pick a different copy
                 // to keep instead of being locked into the size-based default.
-                var otherCount = versions.Count - 1;
+                var otherCount = duplicateVersions.Count;
                 TryAddCandidate(newCandidates, existingByPath, touchedPaths, kept,
                     $"Largest copy of \"{kept.Title}\" ({FormatGb(kept.FileSizeBytes)}) - suggested to keep over {otherCount} other cop{(otherCount == 1 ? "y" : "ies")}.",
                     CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
@@ -93,10 +101,9 @@ public sealed class CleanupRecommendationService(
                 && existingKept.Status == CleanupStatus.PendingReview
                 && existingKept.IsSuggestedKeep)
             {
-                // This file used to have other copies flagged as duplicates (hence the leftover
-                // "suggested keep" marker), but they're gone now (deleted/resolved) and it's back
-                // to a single version - the marker no longer means anything. Remove it unless the
-                // staleness check below reclaims the same row for a real reason.
+                // Every sibling duplicate has been resolved (deleted or rejected) - or there
+                // never were any left after Plex's report changed - so this marker no longer
+                // means anything. Remove it unless the staleness check below reclaims the row.
                 leftoverKeepMarker = existingKept;
             }
 
