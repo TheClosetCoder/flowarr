@@ -44,11 +44,13 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
   const [autoDownload, setAutoDownload] = React.useState({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
   const [radarr, setRadarr] = React.useState({ ...settings.radarr, apiKey: "", clearApiKey: false });
   const [sonarr, setSonarr] = React.useState({ ...settings.sonarr, apiKey: "", clearApiKey: false });
+  const [plex, setPlex] = React.useState({ ...settings.plex, apiKey: "", clearApiKey: false });
   const [message, setMessage] = React.useState("");
   const [torrentTest, setTorrentTest] = React.useState<ConnectionTestResult | null>(null);
   const [sftpTest, setSftpTest] = React.useState<ConnectionTestResult | null>(null);
   const [radarrTest, setRadarrTest] = React.useState<ConnectionTestResult | null>(null);
   const [sonarrTest, setSonarrTest] = React.useState<ConnectionTestResult | null>(null);
+  const [plexTest, setPlexTest] = React.useState<ConnectionTestResult | null>(null);
   const [testingTorrent, setTestingTorrent] = React.useState(false);
   const [testingSftp, setTestingSftp] = React.useState(false);
   const enabledSeedboxRoots = sftpSeedbox.seedboxRoots.filter((root) => root.enabled && root.path.trim());
@@ -60,10 +62,12 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
     setAutoDownload({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
     setRadarr({ ...settings.radarr, apiKey: "", clearApiKey: false });
     setSonarr({ ...settings.sonarr, apiKey: "", clearApiKey: false });
+    setPlex({ ...settings.plex, apiKey: "", clearApiKey: false });
     setTorrentTest(null);
     setSftpTest(null);
     setRadarrTest(null);
     setSonarrTest(null);
+    setPlexTest(null);
   }, [settings]);
 
   async function saveTorrentClient() {
@@ -165,17 +169,17 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
     setMessage("Auto-download saved.");
   }
 
-  async function saveArr(system: "radarr" | "sonarr") {
-    const state = system === "radarr" ? radarr : sonarr;
+  async function saveArr(system: "radarr" | "sonarr" | "plex") {
+    const state = system === "radarr" ? radarr : system === "sonarr" ? sonarr : plex;
     setMessage(`Saving ${system}...`);
     await putJson(`/api/connections/${system}`, state);
     await onSaved();
     setMessage(`${system} saved securely.`);
   }
 
-  async function testArr(system: "radarr" | "sonarr") {
-    const state = system === "radarr" ? radarr : sonarr;
-    const setter = system === "radarr" ? setRadarrTest : setSonarrTest;
+  async function testArr(system: "radarr" | "sonarr" | "plex") {
+    const state = system === "radarr" ? radarr : system === "sonarr" ? sonarr : plex;
+    const setter = system === "radarr" ? setRadarrTest : system === "sonarr" ? setSonarrTest : setPlexTest;
     setter({ ok: true, message: `Testing ${system}...` });
     const result = await postJson<ConnectionTestResult>(`/api/connections/${system}/test`, state);
     setter(result);
@@ -451,7 +455,9 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
       </Card>
       )}
 
-      {activeTab === "plex" && <PlannedServicePanel name="Plex" />}
+      {activeTab === "plex" && (
+        <ArrConnectionCard title="Plex" value={plex} test={plexTest} onChange={setPlex} onSave={() => saveArr("plex")} onTest={() => testArr("plex")} apiKeyLabel="Plex token" />
+      )}
       {activeTab === "jellyfin" && <PlannedServicePanel name="Jellyfin" />}
 
       <div className="flex items-center gap-3">
@@ -491,7 +497,8 @@ function ArrConnectionCard({
   test,
   onChange,
   onSave,
-  onTest
+  onTest,
+  apiKeyLabel = "API key"
 }: {
   title: string;
   value: ArrSettings & { apiKey: string; clearApiKey: boolean };
@@ -499,6 +506,7 @@ function ArrConnectionCard({
   onChange: (value: ArrSettings & { apiKey: string; clearApiKey: boolean }) => void;
   onSave: () => Promise<void>;
   onTest: () => Promise<void>;
+  apiKeyLabel?: string;
 }) {
   return (
     <Card>
@@ -509,11 +517,11 @@ function ArrConnectionCard({
           Enabled
         </label>
         <Input label="Base URL" value={value.baseUrl} onChange={(baseUrl) => onChange({ ...value, baseUrl })} placeholder={`https://your-${title.toLowerCase()}-host`} />
-        <Input label={value.hasApiKey ? "API key (already saved)" : "API key"} type="password" value={value.apiKey} onChange={(apiKey) => onChange({ ...value, apiKey })} placeholder={value.hasApiKey ? "Leave blank to keep current" : ""} />
+        <Input label={value.hasApiKey ? `${apiKeyLabel} (already saved)` : apiKeyLabel} type="password" value={value.apiKey} onChange={(apiKey) => onChange({ ...value, apiKey })} placeholder={value.hasApiKey ? "Leave blank to keep current" : ""} />
         {value.hasApiKey && (
           <label className="flex items-center gap-2 text-sm text-muted">
             <input type="checkbox" checked={value.clearApiKey} onChange={(event) => onChange({ ...value, clearApiKey: event.target.checked })} />
-            Clear saved API key
+            Clear saved {apiKeyLabel.toLowerCase()}
           </label>
         )}
         <div className="flex flex-wrap gap-2">

@@ -10,7 +10,8 @@ namespace Flowarr.Api.Controllers;
 public sealed class ConnectionsController(
     IConnectionSettingsService connectionSettingsService,
     IConnectionTestService connectionTestService,
-    ArrMediaCatalogClient arrMediaCatalogClient) : ControllerBase
+    ArrMediaCatalogClient arrMediaCatalogClient,
+    PlexClient plexClient) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -30,7 +31,7 @@ public sealed class ConnectionsController(
             },
             radarr = new { configured = value.Radarr.Enabled && HasValue(value.Radarr.BaseUrl) && value.Radarr.HasApiKey, status = "configured" },
             sonarr = new { configured = value.Sonarr.Enabled && HasValue(value.Sonarr.BaseUrl) && value.Sonarr.HasApiKey, status = "configured" },
-            plex = new { configured = false, status = "not_configured" },
+            plex = new { configured = value.Plex.Enabled && HasValue(value.Plex.BaseUrl) && value.Plex.HasApiKey, status = value.Plex.Enabled && HasValue(value.Plex.BaseUrl) && value.Plex.HasApiKey ? "configured" : "not_configured" },
             jellyfin = new { configured = false, status = "not_configured" }
         });
     }
@@ -58,7 +59,8 @@ public sealed class ConnectionsController(
                 settings.SftpSeedbox.HasPrivateKeyPassphrase),
             settings.AutoDownload,
             new ArrConnectionResponse(settings.Radarr.Enabled, settings.Radarr.BaseUrl, settings.Radarr.HasApiKey),
-            new ArrConnectionResponse(settings.Sonarr.Enabled, settings.Sonarr.BaseUrl, settings.Sonarr.HasApiKey));
+            new ArrConnectionResponse(settings.Sonarr.Enabled, settings.Sonarr.BaseUrl, settings.Sonarr.HasApiKey),
+            new ArrConnectionResponse(settings.Plex.Enabled, settings.Plex.BaseUrl, settings.Plex.HasApiKey));
     }
 
     [HttpPut("qbittorrent")]
@@ -120,6 +122,19 @@ public sealed class ConnectionsController(
         return arrMediaCatalogClient.TestAsync("Sonarr", request, cancellationToken);
     }
 
+    [HttpPut("plex")]
+    public async Task<IActionResult> SavePlex(SaveArrConnectionRequest request, CancellationToken cancellationToken)
+    {
+        await connectionSettingsService.SavePlexAsync(request, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("plex/test")]
+    public Task<ConnectionTestResult> TestPlex(SaveArrConnectionRequest request, CancellationToken cancellationToken)
+    {
+        return plexClient.TestAsync(request, cancellationToken);
+    }
+
     [HttpGet("{system:regex(^radarr|sonarr$)}/root-folders")]
     public async Task<IActionResult> GetArrRootFolders(string system, CancellationToken cancellationToken)
     {
@@ -140,7 +155,9 @@ public sealed record ConnectionSettingsResponse(
     [property: JsonPropertyName("radarr")]
     ArrConnectionResponse Radarr,
     [property: JsonPropertyName("sonarr")]
-    ArrConnectionResponse Sonarr);
+    ArrConnectionResponse Sonarr,
+    [property: JsonPropertyName("plex")]
+    ArrConnectionResponse Plex);
 
 public sealed record QBittorrentConnectionResponse(
     bool Enabled,

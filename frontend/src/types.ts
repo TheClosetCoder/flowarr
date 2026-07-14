@@ -19,7 +19,18 @@ export type ActiveTransferSummary = {
   totalBytes: number;
   createdAt: string;
 };
-export type CleanupCandidateSummary = { id: string; path: string; sizeBytes: number; reason: string; confidence: string; dryRun: boolean };
+export type CleanupCandidateSummary = {
+  id: string;
+  path: string;
+  sizeBytes: number;
+  reason: string;
+  confidence: string;
+  dryRun: boolean;
+  viewCount?: number;
+  lastViewedAt?: string;
+  addedAt?: string;
+};
+export type CleanupSettings = { staleAfterDays: number };
 export type DashboardStorageLocation = { name: string; kind: string; pathOrEndpoint: string; usedBytes: number; freeBytes: number; lastScannedAt: string };
 export type DashboardDownload = { id: string; client: string; name: string; status: string; progress: number; sizeBytes: number; remotePath?: string; updatedAt: string };
 export type DownloadItem = { id: string; name: string; client: string; status: string; progress: number; sizeBytes: number; remotePath?: string };
@@ -41,6 +52,7 @@ export type ConnectionSettings = {
   autoDownload: { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[] };
   radarr: ArrSettings;
   sonarr: ArrSettings;
+  plex: ArrSettings;
 };
 
 export type RawConnectionSettings = Partial<ConnectionSettings> & {

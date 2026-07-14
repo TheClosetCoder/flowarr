@@ -18,4 +18,7 @@ public sealed class CleanupCandidate
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ReviewedAt { get; set; }
     public string? ReviewedBy { get; set; }
+    public int ViewCount { get; set; }
+    public DateTimeOffset? LastViewedAt { get; set; }
+    public DateTimeOffset? AddedAt { get; set; }
 }

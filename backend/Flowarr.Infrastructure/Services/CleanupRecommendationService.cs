@@ -1,7 +1,9 @@
 using Flowarr.Core.Entities;
 using Flowarr.Core.Enums;
+using Flowarr.Core.Integrations;
 using Flowarr.Core.Services;
 using Flowarr.Infrastructure.Data;
+using Flowarr.Infrastructure.Integrations;
 using Flowarr.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -11,54 +13,122 @@ namespace Flowarr.Infrastructure.Services;
 public sealed class CleanupRecommendationService(
     FlowarrDbContext dbContext,
     IConnectionSettingsService connectionSettingsService,
+    PlexClient plexClient,
     IOptions<IntegrationOptions> options) : ICleanupRecommendationService
 {
     public async Task<IReadOnlyCollection<CleanupCandidate>> GenerateCandidatesAsync(CancellationToken cancellationToken = default)
     {
-        var files = await dbContext.MediaFiles
-            .Include(file => file.MediaItem)
-            .ToListAsync(cancellationToken);
-        var downloads = await dbContext.Downloads.ToListAsync(cancellationToken);
-        var existingPendingPaths = await dbContext.CleanupCandidates
+        var cleanupSettings = await connectionSettingsService.GetCleanupSettingsAsync(cancellationToken);
+        var staleAfter = TimeSpan.FromDays(cleanupSettings.StaleAfterDays);
+        var now = DateTimeOffset.UtcNow;
+
+        var libraryItems = await plexClient.GetLibraryItemsAsync(cancellationToken);
+        var existingPendingPaths = (await dbContext.CleanupCandidates
             .Where(candidate => candidate.Status == CleanupStatus.PendingReview)
             .Select(candidate => candidate.Path)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .ToHashSet(StringComparer.Ordinal);
 
         var candidates = new List<CleanupCandidate>();
+        var byRatingKey = libraryItems.GroupBy(item => item.RatingKey).ToList();
 
-        foreach (var file in files)
+        foreach (var group in byRatingKey)
         {
-            if (string.IsNullOrWhiteSpace(file.RemotePath) || existingPendingPaths.Contains(file.RemotePath))
+            // Plex represents multiple physical copies of the same title as multiple Media
+            // entries under one item - keep the largest (best-quality proxy), flag the rest.
+            var versions = group.OrderByDescending(item => item.FileSizeBytes).ToList();
+            var kept = versions[0];
+
+            foreach (var duplicate in versions.Skip(1))
             {
-                continue;
+                TryAddCandidate(candidates, existingPendingPaths, duplicate,
+                    $"Duplicate version of \"{duplicate.Title}\" - this copy is {FormatGb(duplicate.FileSizeBytes)} vs the {FormatGb(kept.FileSizeBytes)} copy being kept.",
+                    CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun);
             }
 
-            var relatedDownload = downloads.FirstOrDefault(download =>
-                !string.IsNullOrWhiteSpace(download.RemotePath) &&
-                file.RemotePath.StartsWith(download.RemotePath, StringComparison.OrdinalIgnoreCase));
-
-            var downloadComplete = relatedDownload?.Status is DownloadStatus.Complete or DownloadStatus.Seeding;
-            var knownLibraryItem = file.MediaItem?.ExistsInLibrary == true ||
-                                   file.MediaItem?.SourceSystem is "Radarr" or "Sonarr";
-
-            if (file.ExistsOnSeedbox && downloadComplete && file.ImportedLocally && knownLibraryItem)
+            var staleReason = GetStaleReason(kept, now, staleAfter);
+            if (staleReason is not null)
             {
-                candidates.Add(new CleanupCandidate
+                TryAddCandidate(candidates, existingPendingPaths, kept, staleReason, CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun);
+            }
+        }
+
+        // Secondary, lower-confidence tier: same normalized title under separate Plex entries
+        // that Plex itself did not merge into one item (so no shared Media-group signal above).
+        var keptItems = byRatingKey.Select(group => group.OrderByDescending(item => item.FileSizeBytes).First()).ToList();
+        var possibleDuplicateTitles = keptItems
+            .GroupBy(item => NormalizeTitle(item.Title))
+            .Where(group => group.Count() > 1);
+
+        foreach (var titleGroup in possibleDuplicateTitles)
+        {
+            foreach (var item in titleGroup)
+            {
+                if (candidates.Any(candidate => candidate.Path == item.FilePath))
                 {
-                    MediaFileId = file.Id,
-                    DownloadId = relatedDownload?.Id,
-                    Path = file.RemotePath,
-                    SizeBytes = file.SizeBytes,
-                    Reason = $"Seedbox file appears imported locally. Evidence: download complete={downloadComplete}, imported locally={file.ImportedLocally}, known library item={knownLibraryItem}.",
-                    Confidence = relatedDownload is null ? CleanupMatchConfidence.Uncertain : CleanupMatchConfidence.Certain,
-                    DryRun = options.Value.Cleanup.DryRun
-                });
+                    continue;
+                }
+
+                TryAddCandidate(candidates, existingPendingPaths, item,
+                    $"Possible duplicate title: \"{item.Title}\" appears under multiple separate Plex entries. Review manually.",
+                    CleanupMatchConfidence.Uncertain, options.Value.Cleanup.DryRun);
             }
         }
 
         dbContext.CleanupCandidates.AddRange(candidates);
         await dbContext.SaveChangesAsync(cancellationToken);
         return candidates;
+    }
+
+    private static string? GetStaleReason(PlexLibraryItem item, DateTimeOffset now, TimeSpan staleAfter)
+    {
+        if (item.ViewCount == 0 && item.AddedAt is { } addedAt && now - addedAt > staleAfter)
+        {
+            return $"Never watched; added {(now - addedAt).Days} days ago.";
+        }
+
+        if (item.ViewCount > 0 && item.LastViewedAt is { } lastViewedAt && now - lastViewedAt > staleAfter)
+        {
+            return $"Not watched in {(now - lastViewedAt).Days} days (last viewed {lastViewedAt:yyyy-MM-dd}).";
+        }
+
+        return null;
+    }
+
+    private static void TryAddCandidate(
+        List<CleanupCandidate> candidates,
+        HashSet<string> existingPendingPaths,
+        PlexLibraryItem item,
+        string reason,
+        CleanupMatchConfidence confidence,
+        bool dryRun)
+    {
+        // Plex's reported path only resolves to a real file if Plex and Flowarr share the same
+        // mount layout - skip rather than present a candidate we can't actually verify or act on.
+        if (existingPendingPaths.Contains(item.FilePath) || !File.Exists(item.FilePath))
+        {
+            return;
+        }
+
+        candidates.Add(new CleanupCandidate
+        {
+            Path = item.FilePath,
+            SizeBytes = item.FileSizeBytes,
+            Reason = reason,
+            Confidence = confidence,
+            DryRun = dryRun,
+            ViewCount = item.ViewCount,
+            LastViewedAt = item.LastViewedAt,
+            AddedAt = item.AddedAt
+        });
+    }
+
+    private static string FormatGb(long bytes) => $"{bytes / 1024.0 / 1024.0 / 1024.0:0.0} GB";
+
+    private static string NormalizeTitle(string title)
+    {
+        var withoutYear = System.Text.RegularExpressions.Regex.Replace(title, @"\s*\(\d{4}\)\s*$", "");
+        return withoutYear.Trim().ToLowerInvariant();
     }
 
     public async Task<CleanupCandidate?> ApproveAsync(Guid candidateId, string actor, bool dryRun, string? confirmPath, CancellationToken cancellationToken = default)
@@ -85,6 +155,8 @@ public sealed class CleanupRecommendationService(
             {
                 throw new InvalidOperationException("Cleanup path is outside configured seedbox or local media roots.");
             }
+
+            DeleteFile(candidate.Path);
         }
 
         candidate.Status = dryRun ? CleanupStatus.Approved : CleanupStatus.Deleted;
@@ -102,11 +174,27 @@ public sealed class CleanupRecommendationService(
             DryRun = dryRun,
             Details = dryRun
                 ? "Manual approval recorded. No file was deleted because dry-run mode is enabled."
-                : "Manual approval recorded after exact path confirmation and allowed-root validation."
+                : "File deleted after exact path confirmation and allowed-root validation."
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return candidate;
+    }
+
+    private static void DeleteFile(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
+        }
+        else if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+        else
+        {
+            throw new InvalidOperationException("The file no longer exists at the confirmed path.");
+        }
     }
 
     private async Task<bool> IsInsideAllowedRootAsync(string path, CancellationToken cancellationToken)

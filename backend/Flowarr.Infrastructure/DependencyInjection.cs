@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddScoped<IDownloadClient, QBittorrentDownloadClient>();
         services.AddScoped<ArrMediaCatalogClient>();
         services.AddScoped<IMediaCatalogClient>(provider => provider.GetRequiredService<ArrMediaCatalogClient>());
+        services.AddScoped<PlexClient>();
         services.AddScoped<IRemoteFileTransferClient, SftpSeedboxTransferClient>();
         services.AddScoped<LocalStorageScanner>();
         services.AddScoped<SeedboxStorageScanner>();

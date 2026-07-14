@@ -1,6 +1,7 @@
 using Flowarr.Core.Entities;
 using Flowarr.Core.Services;
 using Flowarr.Infrastructure.Data;
+using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,8 +11,22 @@ namespace Flowarr.Api.Controllers;
 [Route("api/cleanup")]
 public sealed class CleanupController(
     FlowarrDbContext dbContext,
-    ICleanupRecommendationService cleanupRecommendationService) : ControllerBase
+    ICleanupRecommendationService cleanupRecommendationService,
+    IConnectionSettingsService connectionSettingsService) : ControllerBase
 {
+    [HttpGet("settings")]
+    public async Task<ActionResult<CleanupSettings>> GetSettings(CancellationToken cancellationToken)
+    {
+        return await connectionSettingsService.GetCleanupSettingsAsync(cancellationToken);
+    }
+
+    [HttpPut("settings")]
+    public async Task<IActionResult> SaveSettings(SaveCleanupSettingsRequest request, CancellationToken cancellationToken)
+    {
+        await connectionSettingsService.SaveCleanupSettingsAsync(request, cancellationToken);
+        return NoContent();
+    }
+
     [HttpGet("candidates")]
     public async Task<IActionResult> GetCandidates(CancellationToken cancellationToken)
     {

@@ -16,11 +16,15 @@ public interface IConnectionSettingsService
     Task<AutoDownloadConnectionSettings> GetAutoDownloadAsync(CancellationToken cancellationToken = default);
     Task<ArrConnectionSettings> GetRadarrAsync(CancellationToken cancellationToken = default);
     Task<ArrConnectionSettings> GetSonarrAsync(CancellationToken cancellationToken = default);
+    Task<ArrConnectionSettings> GetPlexAsync(CancellationToken cancellationToken = default);
+    Task<CleanupSettings> GetCleanupSettingsAsync(CancellationToken cancellationToken = default);
     Task SaveQBittorrentAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken = default);
     Task SaveSftpSeedboxAsync(SaveSftpSeedboxConnectionRequest request, CancellationToken cancellationToken = default);
     Task SaveAutoDownloadAsync(SaveAutoDownloadConnectionRequest request, CancellationToken cancellationToken = default);
     Task SaveRadarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default);
     Task SaveSonarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default);
+    Task SavePlexAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default);
+    Task SaveCleanupSettingsAsync(SaveCleanupSettingsRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed class ConnectionSettingsService(
@@ -38,7 +42,8 @@ public sealed class ConnectionSettingsService(
         var autoDownload = await GetAutoDownloadAsync(cancellationToken);
         var radarr = await GetRadarrAsync(cancellationToken);
         var sonarr = await GetSonarrAsync(cancellationToken);
-        return new ConnectionSettingsSnapshot(qbittorrent, sftpSeedbox, autoDownload, radarr, sonarr);
+        var plex = await GetPlexAsync(cancellationToken);
+        return new ConnectionSettingsSnapshot(qbittorrent, sftpSeedbox, autoDownload, radarr, sonarr, plex);
     }
 
     public async Task<QBittorrentConnectionSettings> GetQBittorrentAsync(CancellationToken cancellationToken = default)
@@ -95,6 +100,18 @@ public sealed class ConnectionSettingsService(
     public Task<ArrConnectionSettings> GetRadarrAsync(CancellationToken cancellationToken = default)
     {
         return GetArrAsync("radarr", "Radarr", options.Value.Radarr.BaseUrl, options.Value.Radarr.ApiKey, cancellationToken);
+    }
+
+    public Task<ArrConnectionSettings> GetPlexAsync(CancellationToken cancellationToken = default)
+    {
+        return GetArrAsync("plex", "Plex", string.Empty, string.Empty, cancellationToken);
+    }
+
+    public async Task<CleanupSettings> GetCleanupSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        var saved = await GetConnectionAsync("cleanupSettings", cancellationToken);
+        var settings = ReadSettings(saved);
+        return new CleanupSettings(GetInt(settings, "staleAfterDays", 90));
     }
 
     public Task<ArrConnectionSettings> GetSonarrAsync(CancellationToken cancellationToken = default)
@@ -191,6 +208,25 @@ public sealed class ConnectionSettingsService(
     public Task SaveRadarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
     {
         return SaveArrAsync("radarr", "Radarr", request, cancellationToken);
+    }
+
+    public Task SavePlexAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
+    {
+        return SaveArrAsync("plex", "Plex", request, cancellationToken);
+    }
+
+    public Task SaveCleanupSettingsAsync(SaveCleanupSettingsRequest request, CancellationToken cancellationToken = default)
+    {
+        return SaveConnectionAsync(
+            "cleanupSettings",
+            "Cleanup",
+            true,
+            new Dictionary<string, string?>
+            {
+                ["staleAfterDays"] = request.StaleAfterDays.ToString()
+            },
+            [],
+            cancellationToken);
     }
 
     public Task SaveSonarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
@@ -369,7 +405,8 @@ public sealed record ConnectionSettingsSnapshot(
     SftpSeedboxConnectionSettings SftpSeedbox,
     AutoDownloadConnectionSettings AutoDownload,
     ArrConnectionSettings Radarr,
-    ArrConnectionSettings Sonarr);
+    ArrConnectionSettings Sonarr,
+    ArrConnectionSettings Plex);
 
 public sealed record QBittorrentConnectionSettings(
     bool Enabled,
@@ -464,3 +501,7 @@ public sealed record SaveArrConnectionRequest(
     string? BaseUrl,
     string? ApiKey,
     bool ClearApiKey);
+
+public sealed record CleanupSettings(int StaleAfterDays);
+
+public sealed record SaveCleanupSettingsRequest(int StaleAfterDays);
