@@ -172,21 +172,11 @@ public sealed class CleanupRecommendationService(
 
         if (existingByPath.TryGetValue(item.FilePath, out var existing))
         {
-            if (existing.Status != CleanupStatus.PendingReview)
-            {
-                // A decision (approve dry-run / reject / a failed real delete) was already
-                // recorded for this path and the file is still on disk. Leave the row - and the
-                // decision - alone; do not resurrect it as a new pending candidate.
-                return;
-            }
-
-            // Already a pending candidate from a prior scan - refresh it in place (tracked
-            // entity, so SaveChanges persists this) rather than skipping, so fields added after
-            // the candidate was first created (e.g. series/season) get backfilled on rescan.
+            // Descriptive/matching fields always get refreshed - including for a decided
+            // (Approved/Rejected/Failed) row - so metadata added after the candidate was first
+            // created (e.g. series/season) gets backfilled regardless of decision state.
             existing.SizeBytes = item.FileSizeBytes;
-            existing.Reason = reason;
             existing.Confidence = confidence;
-            existing.DryRun = dryRun;
             existing.ViewCount = item.ViewCount;
             existing.LastViewedAt = item.LastViewedAt;
             existing.AddedAt = item.AddedAt;
@@ -198,6 +188,16 @@ public sealed class CleanupRecommendationService(
             existing.DuplicateGroupKey = duplicateGroupKey;
             existing.KeptPath = keptPath;
             existing.IsSuggestedKeep = isSuggestedKeep;
+
+            if (existing.Status == CleanupStatus.PendingReview)
+            {
+                // Reason/DryRun describe the decision itself once one has been recorded (approve
+                // dry-run / reject / a failed real delete) - only touch them while still pending,
+                // so a rescan can't quietly rewrite what the user already decided.
+                existing.Reason = reason;
+                existing.DryRun = dryRun;
+            }
+
             return;
         }
 
