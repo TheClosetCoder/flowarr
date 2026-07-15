@@ -18,6 +18,12 @@ public sealed class CleanupRecommendationService(
 {
     public async Task<IReadOnlyCollection<CleanupCandidate>> GenerateCandidatesAsync(Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
+        var plexSettings = await connectionSettingsService.GetPlexAsync(cancellationToken);
+        if (!plexSettings.Enabled || string.IsNullOrWhiteSpace(plexSettings.BaseUrl) || !plexSettings.HasApiKey)
+        {
+            throw new InvalidOperationException("Plex must be configured before generating cleanup recommendations.");
+        }
+
         var cleanupSettings = await connectionSettingsService.GetCleanupSettingsAsync(cancellationToken);
         var staleAfter = TimeSpan.FromDays(cleanupSettings.StaleAfterDays);
         var now = DateTimeOffset.UtcNow;
