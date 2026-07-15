@@ -41,9 +41,10 @@ public sealed class CleanupController(
             query = query.Where(candidate => candidate.Status == value);
         }
 
-        var candidates = await query
+        // SQLite's EF Core provider cannot translate ORDER BY on DateTimeOffset columns, so sort client-side.
+        var candidates = (await query.ToListAsync(cancellationToken))
             .OrderByDescending(candidate => candidate.CreatedAt)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         return Ok(candidates);
     }

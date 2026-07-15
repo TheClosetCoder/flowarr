@@ -16,10 +16,11 @@ public sealed class TransfersController(
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {
-        var transfers = await dbContext.RemoteTransfers
+        // SQLite's EF Core provider cannot translate ORDER BY on DateTimeOffset columns, so sort/Take client-side.
+        var transfers = (await dbContext.RemoteTransfers.ToListAsync(cancellationToken))
             .OrderByDescending(transfer => transfer.CreatedAt)
             .Take(100)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         return Ok(transfers);
     }
@@ -94,7 +95,6 @@ public sealed class TransfersController(
                               !string.IsNullOrWhiteSpace(value.SftpSeedbox.PrivateKeyPath)),
                 value.SftpSeedbox.Host,
                 value.SftpSeedbox.Port,
-                value.SftpSeedbox.RemoteRootPath,
                 usesPrivateKey = !string.IsNullOrWhiteSpace(value.SftpSeedbox.PrivateKeyPath)
             }
         });

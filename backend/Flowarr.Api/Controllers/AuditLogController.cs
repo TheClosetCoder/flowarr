@@ -11,10 +11,11 @@ public sealed class AuditLogController(FlowarrDbContext dbContext) : ControllerB
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {
-        var entries = await dbContext.AuditLogs
+        // SQLite's EF Core provider cannot translate ORDER BY on DateTimeOffset columns, so sort/Take client-side.
+        var entries = (await dbContext.AuditLogs.ToListAsync(cancellationToken))
             .OrderByDescending(entry => entry.CreatedAt)
             .Take(100)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         return Ok(entries);
     }

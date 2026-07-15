@@ -40,10 +40,12 @@ public sealed class CleanupScheduleHostedService(
             }
 
             var dbContext = scope.ServiceProvider.GetRequiredService<FlowarrDbContext>();
-            var lastRun = await dbContext.JobRuns
+            // SQLite's EF Core provider cannot translate ORDER BY on DateTimeOffset columns, so sort client-side.
+            var lastRun = (await dbContext.JobRuns
                 .Where(run => run.JobType == "cleanup.generate" && run.Status == JobRunStatus.Succeeded)
+                .ToListAsync(cancellationToken))
                 .OrderByDescending(run => run.CompletedAt)
-                .FirstOrDefaultAsync(cancellationToken);
+                .FirstOrDefault();
 
             if (lastRun?.CompletedAt is { } completedAt && DateTimeOffset.UtcNow - completedAt < TimeSpan.FromHours(settings.AutoGenerateIntervalHours))
             {

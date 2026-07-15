@@ -28,23 +28,30 @@ public sealed class DashboardController(
             .OrderBy(location => location.Kind)
             .ThenBy(location => location.Name)
             .ToListAsync(cancellationToken);
-        var downloads = await dbContext.Downloads
+        // SQLite's EF Core provider cannot translate ORDER BY on DateTimeOffset columns, so these
+        // sort/Take client-side after a (still server-filtered) fetch instead of chaining OrderBy
+        // before ToListAsync. Table sizes here are homelab-scale, so this is cheap.
+        var downloads = (await dbContext.Downloads.ToListAsync(cancellationToken))
             .OrderByDescending(download => download.UpdatedAt)
             .Take(10)
-            .ToListAsync(cancellationToken);
+            .ToList();
         var activeDownloads = downloads.Count(download => download.Status == DownloadStatus.Downloading);
 
-        var mediaImports = await dbContext.MediaFiles
+        var mediaImportFiles = await dbContext.MediaFiles
+            .Include(file => file.MediaItem)
             .Where(file => file.ImportedLocally)
+            .ToListAsync(cancellationToken);
+        var mediaImports = mediaImportFiles
             .OrderByDescending(file => file.LastSeenAt)
             .Take(5)
             .Select(file => new RecentImport(file.MediaItemId, file.MediaItem!.Title, file.LastSeenAt))
-            .ToListAsync(cancellationToken);
-        var completedTransfers = await dbContext.RemoteTransfers
+            .ToList();
+        var completedTransfers = (await dbContext.RemoteTransfers
             .Where(transfer => transfer.Status == TransferStatus.Completed || transfer.Status == TransferStatus.Skipped)
+            .ToListAsync(cancellationToken))
             .OrderByDescending(transfer => transfer.CompletedAt ?? transfer.CreatedAt)
             .Take(5)
-            .ToListAsync(cancellationToken);
+            .ToList();
         var recentImports = mediaImports
             .Concat(completedTransfers.Select(transfer => new RecentImport(
                 transfer.Id,
@@ -54,11 +61,12 @@ public sealed class DashboardController(
             .Take(5)
             .ToList();
 
-        var activeTransferRows = await dbContext.RemoteTransfers
+        var activeTransferRows = (await dbContext.RemoteTransfers
             .Where(transfer => transfer.Status == TransferStatus.Queued || transfer.Status == TransferStatus.Running)
+            .ToListAsync(cancellationToken))
             .OrderBy(transfer => transfer.CreatedAt)
             .Take(10)
-            .ToListAsync(cancellationToken);
+            .ToList();
         var activeTransfers = activeTransferRows
             .Select(transfer => new ActiveTransferSummary(
                 transfer.Id,
@@ -69,8 +77,9 @@ public sealed class DashboardController(
                 transfer.CreatedAt))
             .ToList();
 
-        var cleanupCandidates = await dbContext.CleanupCandidates
+        var cleanupCandidates = (await dbContext.CleanupCandidates
             .Where(candidate => candidate.Status == CleanupStatus.PendingReview)
+            .ToListAsync(cancellationToken))
             .OrderByDescending(candidate => candidate.CreatedAt)
             .Take(5)
             .Select(candidate => new CleanupCandidateSummary(
@@ -84,7 +93,7 @@ public sealed class DashboardController(
                 candidate.SeasonNumber,
                 candidate.ReasonType.ToString(),
                 candidate.DuplicateGroupKey))
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         var cleanupStats = await BuildCleanupStatsAsync(cancellationToken);
 
@@ -132,10 +141,11 @@ public sealed class DashboardController(
             .Where(candidate => candidate.Status == CleanupStatus.Deleted)
             .SumAsync(candidate => candidate.SizeBytes, cancellationToken);
 
-        var lastRun = await dbContext.JobRuns
+        var lastRun = (await dbContext.JobRuns
             .Where(run => run.JobType == "cleanup.generate" && run.Status == JobRunStatus.Succeeded)
-            .OrderByDescending(run => run.CompletedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .OrderByDescending(run => run.CompletedAt ?? DateTimeOffset.MinValue)
+            .FirstOrDefault();
 
         var cleanupSettings = await connectionSettingsService.GetCleanupSettingsAsync(cancellationToken);
         var nextScanAt = cleanupSettings.AutoGenerateEnabled && lastRun?.CompletedAt is { } lastCompletedAt

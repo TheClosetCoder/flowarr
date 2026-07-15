@@ -63,24 +63,27 @@ public sealed class AutoDownloadHostedService(
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            var downloads = await dbContext.Downloads
+            // SQLite's EF Core provider cannot translate ORDER BY on DateTimeOffset columns, so sort/Take client-side.
+            var downloads = (await dbContext.Downloads
                 .Where(download =>
                     !string.IsNullOrWhiteSpace(download.RemotePath) &&
                     (download.Status == DownloadStatus.Complete || download.Status == DownloadStatus.Seeding))
+                .ToListAsync(cancellationToken))
                 .OrderBy(download => download.UpdatedAt)
                 .Take(10)
-                .ToListAsync(cancellationToken);
+                .ToList();
 
             foreach (var download in downloads)
             {
                 await TryDownloadAsync(dbContext, transferClient, connectionSettings, autoDownload, download.RemotePath!, download.Id, cancellationToken);
             }
 
-            var importedFiles = await dbContext.MediaFiles
+            var importedFiles = (await dbContext.MediaFiles
                 .Where(file => file.ImportedLocally && file.ExistsOnSeedbox && !string.IsNullOrWhiteSpace(file.RemotePath))
+                .ToListAsync(cancellationToken))
                 .OrderByDescending(file => file.LastSeenAt)
                 .Take(25)
-                .ToListAsync(cancellationToken);
+                .ToList();
 
             foreach (var file in importedFiles)
             {
@@ -102,11 +105,12 @@ public sealed class AutoDownloadHostedService(
                 }
             }
 
-            var queuedTransfers = await dbContext.RemoteTransfers
+            var queuedTransfers = (await dbContext.RemoteTransfers
                 .Where(transfer => transfer.Status == TransferStatus.Queued)
+                .ToListAsync(cancellationToken))
                 .OrderBy(transfer => transfer.CreatedAt)
                 .Take(3)
-                .ToListAsync(cancellationToken);
+                .ToList();
 
             foreach (var transfer in queuedTransfers)
             {

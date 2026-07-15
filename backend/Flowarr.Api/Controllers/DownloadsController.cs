@@ -27,9 +27,10 @@ public sealed class DownloadsController(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var downloads = await dbContext.Downloads
+        // SQLite's EF Core provider cannot translate ORDER BY on DateTimeOffset columns, so sort client-side.
+        var downloads = (await dbContext.Downloads.ToListAsync(cancellationToken))
             .OrderByDescending(download => download.UpdatedAt)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         return Ok(downloads);
     }
