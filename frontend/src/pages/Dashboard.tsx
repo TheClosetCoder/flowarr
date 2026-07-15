@@ -1,4 +1,5 @@
-import { Copy, Download, HardDrive, ImportIcon, Server, Trash2 } from "lucide-react";
+import React from "react";
+import { ChevronLeft, ChevronRight, Clock, Copy, Download, HardDrive, ImportIcon, Server, Trash2 } from "lucide-react";
 import { fetchJson, postEmpty } from "../api";
 import { Card, CardHeader } from "../components/Card";
 import { EmptyState } from "../components/EmptyState";
@@ -11,15 +12,24 @@ import type { DashboardSummary, RemoteTransfer } from "../types";
 export function Dashboard({
   dashboard,
   transfers,
-  setTransfers
+  setTransfers,
+  torrentClientConfigured
 }: {
   dashboard: DashboardSummary | null;
   transfers: RemoteTransfer[];
   setTransfers: (items: RemoteTransfer[]) => void;
+  torrentClientConfigured: boolean;
 }) {
   const activeTransfers = transfers.filter(isTransferActive);
-  const torrentDownloading = (dashboard?.downloads ?? []).filter((item) => item.status === "Downloading").length;
+  const allDownloads = dashboard?.downloads ?? [];
+  const torrentDownloading = allDownloads.filter((item) => item.status === "Downloading").length;
   const activeCount = activeTransfers.length + torrentDownloading;
+
+  const torrentsPerPage = 5;
+  const [torrentPage, setTorrentPage] = React.useState(0);
+  const torrentPageCount = Math.max(1, Math.ceil(allDownloads.length / torrentsPerPage));
+  const currentTorrentPage = Math.min(torrentPage, torrentPageCount - 1);
+  const pagedDownloads = allDownloads.slice(currentTorrentPage * torrentsPerPage, currentTorrentPage * torrentsPerPage + torrentsPerPage);
 
   async function cancelTransfer(transfer: RemoteTransfer) {
     if (transfer.status === "Running" && !window.confirm(`Cancel "${getDisplayTitle(transfer.remotePath, transfer.localPath)}"? The partially downloaded file will be deleted.`)) {
@@ -60,7 +70,7 @@ export function Dashboard({
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
+        <Card className={torrentClientConfigured ? undefined : "xl:col-span-2"}>
           <CardHeader title="Recently imported" />
           {dashboard?.recentImports.length ? (
             <div className="space-y-2">
@@ -81,24 +91,47 @@ export function Dashboard({
           )}
         </Card>
 
-        <Card>
-          <CardHeader title="Torrent client" />
-          {(dashboard?.downloads ?? []).length ? (
-            <div className="space-y-2">
-              {(dashboard?.downloads ?? []).map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
-                  <p className="min-w-0 flex-1 truncate text-sm text-ink">{item.name}</p>
-                  <div className="flex flex-none items-center gap-2">
-                    <span className="text-xs text-muted">{Math.round(item.progress * 100)}%</span>
-                    <StatusBadge status={item.status} />
+        {torrentClientConfigured && (
+          <Card>
+            <CardHeader title="Torrent client" />
+            {allDownloads.length ? (
+              <div className="space-y-2">
+                {pagedDownloads.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
+                    <p className="min-w-0 flex-1 truncate text-sm text-ink">{item.name}</p>
+                    <div className="flex flex-none items-center gap-2">
+                      <span className="text-xs text-muted">{Math.round(item.progress * 100)}%</span>
+                      <StatusBadge status={item.status} />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState icon={Download} message="No torrent client configured." />
-          )}
-        </Card>
+                ))}
+                {torrentPageCount > 1 && (
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setTorrentPage((page) => Math.max(0, page - 1))}
+                      disabled={currentTorrentPage === 0}
+                      className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs text-ink hover:bg-surfaceMuted disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronLeft size={14} /> Prev
+                    </button>
+                    <span className="text-xs text-muted">Page {currentTorrentPage + 1} of {torrentPageCount}</span>
+                    <button
+                      type="button"
+                      onClick={() => setTorrentPage((page) => Math.min(torrentPageCount - 1, page + 1))}
+                      disabled={currentTorrentPage === torrentPageCount - 1}
+                      className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-xs text-ink hover:bg-surfaceMuted disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next <ChevronRight size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <EmptyState icon={Download} message="No downloads right now." />
+            )}
+          </Card>
+        )}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -135,7 +168,9 @@ export function Dashboard({
                 <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-ink">{item.seriesTitle ? `${item.seriesTitle}${typeof item.seasonNumber === "number" ? ` - Season ${item.seasonNumber}` : ""}` : basenameOf(item.path)}</p>
+                    {item.seriesTitle && <p className="truncate text-xs text-muted">{basenameOf(item.path)}</p>}
                     {item.reasonType === "Duplicate" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Copy size={12} /> Duplicate</span>}
+                    {item.reasonType === "Stale" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Clock size={12} /> Stale / unwatched</span>}
                   </div>
                   <StatusBadge status={item.confidence} />
                 </div>

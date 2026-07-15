@@ -159,7 +159,14 @@ export function App() {
             }}
           />
 
-          {activePage === "Dashboard" && <Dashboard dashboard={dashboard} transfers={transfers} setTransfers={setTransfers} />}
+          {activePage === "Dashboard" && (
+            <Dashboard
+              dashboard={dashboard}
+              transfers={transfers}
+              setTransfers={setTransfers}
+              torrentClientConfigured={Boolean(connectionSettings?.qbittorrent.enabled && connectionSettings.qbittorrent.baseUrl)}
+            />
+          )}
           {activePage === "Connections" && <Connections settings={connectionSettings} error={settingsError} activeTab={connectionTab} onTabChange={setConnectionTab} onSaved={refreshSettings} />}
           {activePage === "Storage" && <Storage storage={storage} setStorage={setStorage} />}
           {activePage === "Downloads" && <Downloads downloads={downloads} />}

@@ -43,14 +43,14 @@ public sealed class DashboardController(
             .ToListAsync(cancellationToken);
         var mediaImports = mediaImportFiles
             .OrderByDescending(file => file.LastSeenAt)
-            .Take(5)
+            .Take(10)
             .Select(file => new RecentImport(file.MediaItemId, file.MediaItem!.Title, file.LastSeenAt))
             .ToList();
         var completedTransfers = (await dbContext.RemoteTransfers
             .Where(transfer => transfer.Status == TransferStatus.Completed || transfer.Status == TransferStatus.Skipped)
             .ToListAsync(cancellationToken))
             .OrderByDescending(transfer => transfer.CompletedAt ?? transfer.CreatedAt)
-            .Take(5)
+            .Take(10)
             .ToList();
         var recentImports = mediaImports
             .Concat(completedTransfers.Select(transfer => new RecentImport(
@@ -58,7 +58,7 @@ public sealed class DashboardController(
                 GetDisplayTitle(transfer.RemotePath, transfer.LocalPath),
                 transfer.CompletedAt ?? transfer.CreatedAt)))
             .OrderByDescending(import => import.ImportedAt)
-            .Take(5)
+            .Take(10)
             .ToList();
 
         var activeTransferRows = (await dbContext.RemoteTransfers
