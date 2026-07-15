@@ -55,7 +55,8 @@ public sealed class ConnectionsController(
                 settings.SftpSeedbox.PrivateKeyPath,
                 settings.SftpSeedbox.SeedboxRoots,
                 settings.SftpSeedbox.HasPassword,
-                settings.SftpSeedbox.HasPrivateKeyPassphrase),
+                settings.SftpSeedbox.HasPrivateKeyPassphrase,
+                settings.SftpSeedbox.AccountQuotaBytes),
             settings.AutoDownload,
             new ArrConnectionResponse(settings.Radarr.Enabled, settings.Radarr.BaseUrl, settings.Radarr.HasApiKey),
             new ArrConnectionResponse(settings.Sonarr.Enabled, settings.Sonarr.BaseUrl, settings.Sonarr.HasApiKey),
@@ -173,7 +174,8 @@ public sealed record SftpSeedboxConnectionResponse(
     string PrivateKeyPath,
     SeedboxRootSettings[] SeedboxRoots,
     bool HasPassword,
-    bool HasPrivateKeyPassphrase);
+    bool HasPrivateKeyPassphrase,
+    long AccountQuotaBytes);
 
 public sealed record ArrConnectionResponse(
     bool Enabled,
