@@ -169,7 +169,7 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
     private string NormalizeRemotePath(string remotePath)
     {
         var root = (_seedbox?.SeedboxRoots.FirstOrDefault(item => item.Enabled && item.Kind.Equals("Download", StringComparison.OrdinalIgnoreCase))?.Path
-            ?? _seedbox?.RemoteRootPath
+            ?? _seedbox?.SeedboxRoots.FirstOrDefault(item => item.Enabled && !string.IsNullOrWhiteSpace(item.Path))?.Path
             ?? string.Empty).TrimEnd('/');
         if (string.IsNullOrWhiteSpace(root) || remotePath.StartsWith("/", StringComparison.Ordinal))
         {

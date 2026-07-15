@@ -77,7 +77,6 @@ public sealed class ConnectionSettingsService(
             Get(secrets, "password", options.Value.SftpSeedbox.Password),
             Get(settings, "privateKeyPath", options.Value.SftpSeedbox.PrivateKeyPath),
             Get(secrets, "privateKeyPassphrase", string.Empty),
-            Get(settings, "remoteRootPath", options.Value.SftpSeedbox.RemoteRootPath),
             GetSeedboxRoots(settings),
             !string.IsNullOrWhiteSpace(Get(secrets, "password", options.Value.SftpSeedbox.Password)),
             !string.IsNullOrWhiteSpace(Get(secrets, "privateKeyPassphrase", string.Empty)),
@@ -181,7 +180,6 @@ public sealed class ConnectionSettingsService(
                 ["port"] = request.Port.ToString(),
                 ["username"] = request.Username ?? string.Empty,
                 ["privateKeyPath"] = request.PrivateKeyPath ?? string.Empty,
-                ["remoteRootPath"] = request.RemoteRootPath ?? string.Empty,
                 ["seedboxRoots"] = JsonSerializer.Serialize(request.SeedboxRoots ?? [], JsonOptions),
                 ["accountQuotaBytes"] = request.AccountQuotaBytes.ToString()
             },
@@ -398,10 +396,7 @@ public sealed class ConnectionSettingsService(
             return JsonSerializer.Deserialize<SeedboxRootSettings[]>(value, JsonOptions) ?? [];
         }
 
-        var legacyRoot = Get(values, "remoteRootPath", string.Empty);
-        return string.IsNullOrWhiteSpace(legacyRoot)
-            ? []
-            : [new SeedboxRootSettings(true, "Media", "Media", legacyRoot)];
+        return [];
     }
 }
 
@@ -429,7 +424,6 @@ public sealed record SftpSeedboxConnectionSettings(
     string Password,
     string PrivateKeyPath,
     string PrivateKeyPassphrase,
-    string RemoteRootPath,
     SeedboxRootSettings[] SeedboxRoots,
     bool HasPassword,
     bool HasPrivateKeyPassphrase,
@@ -489,7 +483,6 @@ public sealed record SaveSftpSeedboxConnectionRequest(
     string? PrivateKeyPath,
     string? PrivateKeyPassphrase,
     bool ClearPrivateKeyPassphrase,
-    string? RemoteRootPath,
     SeedboxRootSettings[]? SeedboxRoots,
     long AccountQuotaBytes);
 

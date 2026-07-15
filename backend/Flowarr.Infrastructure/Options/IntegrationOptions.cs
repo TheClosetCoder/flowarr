@@ -57,5 +57,4 @@ public sealed class SftpSeedboxOptions
     public string Username { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string PrivateKeyPath { get; set; } = string.Empty;
-    public string RemoteRootPath { get; set; } = string.Empty;
 }

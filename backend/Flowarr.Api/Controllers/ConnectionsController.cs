@@ -53,7 +53,6 @@ public sealed class ConnectionsController(
                 settings.SftpSeedbox.Port,
                 settings.SftpSeedbox.Username,
                 settings.SftpSeedbox.PrivateKeyPath,
-                settings.SftpSeedbox.RemoteRootPath,
                 settings.SftpSeedbox.SeedboxRoots,
                 settings.SftpSeedbox.HasPassword,
                 settings.SftpSeedbox.HasPrivateKeyPassphrase),
@@ -172,7 +171,6 @@ public sealed record SftpSeedboxConnectionResponse(
     int Port,
     string Username,
     string PrivateKeyPath,
-    string RemoteRootPath,
     SeedboxRootSettings[] SeedboxRoots,
     bool HasPassword,
     bool HasPrivateKeyPassphrase);

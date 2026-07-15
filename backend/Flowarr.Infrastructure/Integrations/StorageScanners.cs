@@ -100,11 +100,6 @@ public sealed class SeedboxStorageScanner(
             .Select(group => group.First())
             .ToList();
 
-        if (remotePaths.Count == 0)
-        {
-            remotePaths.Add(new { Name = "Seedbox root", Path = seedbox.RemoteRootPath, Category = StorageCategory.Monitored });
-        }
-
         return await Task.Run<IReadOnlyCollection<StorageSnapshot>>(() =>
         {
             var snapshots = new List<StorageSnapshot>();
@@ -133,23 +128,29 @@ public sealed class SeedboxStorageScanner(
     /// </summary>
     private long? GetAccountFreeBytes(SftpClient client, SftpSeedboxConnectionSettings seedbox, CancellationToken cancellationToken)
     {
-        if (seedbox.AccountQuotaBytes <= 0 || string.IsNullOrWhiteSpace(seedbox.RemoteRootPath))
+        var root = PrimaryRootPath(seedbox);
+        if (seedbox.AccountQuotaBytes <= 0 || string.IsNullOrWhiteSpace(root))
         {
             return null;
         }
 
         if (!cache.TryGetValue(AccountUsedBytesCacheKey, out long accountUsedBytes))
         {
-            if (!client.Exists(seedbox.RemoteRootPath))
+            if (!client.Exists(root))
             {
                 return null;
             }
 
-            accountUsedBytes = GetRemoteUsedBytes(client, seedbox.RemoteRootPath, cancellationToken);
+            accountUsedBytes = GetRemoteUsedBytes(client, root, cancellationToken);
             cache.Set(AccountUsedBytesCacheKey, accountUsedBytes, AccountUsageCacheDuration);
         }
 
         return Math.Max(0, seedbox.AccountQuotaBytes - accountUsedBytes);
+    }
+
+    private static string? PrimaryRootPath(SftpSeedboxConnectionSettings seedbox)
+    {
+        return seedbox.SeedboxRoots.FirstOrDefault(root => root.Enabled && !string.IsNullOrWhiteSpace(root.Path))?.Path;
     }
 
     private static bool IsConfigured(SftpSeedboxConnectionSettings seedbox)
@@ -182,7 +183,7 @@ public sealed class SeedboxStorageScanner(
                                     (string.IsNullOrWhiteSpace(rule.SourceRootPath)
                                         ? root.Kind.Equals(rule.SourceRootKind, StringComparison.OrdinalIgnoreCase)
                                         : root.Path.Equals(rule.SourceRootPath, StringComparison.OrdinalIgnoreCase)))
-            ?.Path ?? seedbox.RemoteRootPath;
+            ?.Path ?? PrimaryRootPath(seedbox) ?? string.Empty;
     }
 
     private static StorageSnapshot BuildSftpSnapshot(

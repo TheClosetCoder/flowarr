@@ -65,7 +65,8 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
                 client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(15);
                 client.Connect();
 
-                var remotePath = string.IsNullOrWhiteSpace(settings.RemoteRootPath) ? "." : settings.RemoteRootPath;
+                var primaryRoot = settings.SeedboxRoots.FirstOrDefault(root => root.Enabled && !string.IsNullOrWhiteSpace(root.Path))?.Path;
+                var remotePath = string.IsNullOrWhiteSpace(primaryRoot) ? "." : primaryRoot;
                 if (!client.Exists(remotePath))
                 {
                     client.Disconnect();
@@ -229,7 +230,6 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
             string.IsNullOrWhiteSpace(request.Password) && !request.ClearPassword ? saved.Password : request.Password ?? string.Empty,
             string.IsNullOrWhiteSpace(request.PrivateKeyPath) ? saved.PrivateKeyPath : request.PrivateKeyPath,
             string.IsNullOrWhiteSpace(request.PrivateKeyPassphrase) && !request.ClearPrivateKeyPassphrase ? saved.PrivateKeyPassphrase : request.PrivateKeyPassphrase ?? string.Empty,
-            string.IsNullOrWhiteSpace(request.RemoteRootPath) ? saved.RemoteRootPath : request.RemoteRootPath,
             request.SeedboxRoots ?? saved.SeedboxRoots,
             !string.IsNullOrWhiteSpace(request.Password) || (!request.ClearPassword && saved.HasPassword),
             !string.IsNullOrWhiteSpace(request.PrivateKeyPassphrase) || (!request.ClearPrivateKeyPassphrase && saved.HasPrivateKeyPassphrase),

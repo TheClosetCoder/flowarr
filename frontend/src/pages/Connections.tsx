@@ -112,7 +112,6 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
       port: Number(sftpSeedbox.port) || 22,
       username: sftpSeedbox.username || "",
       privateKeyPath: sftpSeedbox.privateKeyPath || "",
-      remoteRootPath: sftpSeedbox.remoteRootPath || "",
       seedboxRoots: sftpSeedbox.seedboxRoots.map(({ id, ...root }) => root)
     });
     await onSaved();
@@ -130,7 +129,6 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
         port: Number(sftpSeedbox.port) || 22,
         username: sftpSeedbox.username || "",
         privateKeyPath: sftpSeedbox.privateKeyPath || "",
-        remoteRootPath: sftpSeedbox.remoteRootPath || "",
         seedboxRoots: sftpSeedbox.seedboxRoots.map(({ id, ...root }) => root)
       });
       setSftpTest(result);
@@ -265,7 +263,6 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
             <p className="text-xs text-muted">Leave blank to use the saved encrypted password. Typed passwords are sent once to the Flowarr API for save/test.</p>
             <Input label="Private key path" value={sftpSeedbox.privateKeyPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, privateKeyPath: value })} placeholder="/keys/id_rsa" />
             <Input label={sftpSeedbox.hasPrivateKeyPassphrase ? "Key passphrase (already saved)" : "Key passphrase"} type="password" value={sftpSeedbox.privateKeyPassphrase} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, privateKeyPassphrase: value })} />
-            <Input label="Legacy remote root path" value={sftpSeedbox.remoteRootPath} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, remoteRootPath: value })} placeholder="/home/user/files" />
             <Input
               label="Account quota (GB)"
               value={sftpSeedbox.accountQuotaBytes ? String(Math.round(sftpSeedbox.accountQuotaBytes / 1024 ** 3)) : ""}

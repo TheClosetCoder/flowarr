@@ -62,14 +62,14 @@ export type LocalFolderEntry = { name: string; path: string };
 export type ConnectionTestResult = { ok: boolean; message: string };
 export type LocalMediaPath = { id?: string; enabled: boolean; name: string; path: string; role: string };
 export type SeedboxRoot = { id?: string; enabled: boolean; name: string; kind: "Download" | "Media"; path: string };
-export type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[]; sftpSeedbox: { configured: boolean; host: string; port: number; remoteRootPath: string; usesPrivateKey: boolean } };
+export type TransferSettings = { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[]; sftpSeedbox: { configured: boolean; host: string; port: number; usesPrivateKey: boolean } };
 export type TransferRule = { id?: string; enabled: boolean; name: string; remotePathPrefix: string; localPath: string; sourceRootKind: "Download" | "Media"; sourceRootPath: string; deleteRemoteAfterDownload: boolean };
 export type ArrSettings = { enabled: boolean; baseUrl: string; hasApiKey: boolean };
 export type AuthStatus = { setupComplete: boolean; authenticated: boolean };
 export type JobRun = { id: string; jobType: string; status: string; startedAt: string; completedAt?: string; errorMessage?: string; progress?: string };
 export type ConnectionSettings = {
   qbittorrent: { enabled: boolean; clientType: string; baseUrl: string; username: string; hasPassword: boolean };
-  sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; remoteRootPath: string; seedboxRoots: SeedboxRoot[]; hasPassword: boolean; hasPrivateKeyPassphrase: boolean; accountQuotaBytes: number };
+  sftpSeedbox: { enabled: boolean; host: string; port: number; username: string; privateKeyPath: string; seedboxRoots: SeedboxRoot[]; hasPassword: boolean; hasPrivateKeyPassphrase: boolean; accountQuotaBytes: number };
   autoDownload: { enabled: boolean; localImportPath: string; overwriteExisting: boolean; allowedExtensions: string[]; localMediaPaths: LocalMediaPath[]; transferRules: TransferRule[] };
   radarr: ArrSettings;
   sonarr: ArrSettings;

@@ -72,7 +72,6 @@ FLOWARR_SFTP_USERNAME=
 FLOWARR_SFTP_PASSWORD=
 FLOWARR_SFTP_PRIVATE_KEY_PATH=
 FLOWARR_SFTP_PRIVATE_KEY_HOST_PATH=./data/keys
-FLOWARR_SFTP_REMOTE_ROOT_PATH=
 ```
 
 The API also supports .NET environment variable binding:
@@ -102,10 +101,9 @@ FLOWARR_SFTP_HOST=your-ultra-sftp-host
 FLOWARR_SFTP_PORT=22
 FLOWARR_SFTP_USERNAME=your-ultra-username
 FLOWARR_SFTP_PASSWORD=your-ultra-password
-FLOWARR_SFTP_REMOTE_ROOT_PATH=/legacy/default/root
 ```
 
-In the app, configure explicit seedbox roots instead of relying on the legacy root:
+In the app, configure at least one seedbox root under SFTP settings — quota, storage, and download features all depend on it:
 
 - `Download` roots are the paths reported by Deluge/qBittorrent, such as `/downloads/movies`.
 - `Media` roots are completed library paths managed by Radarr/Sonarr, such as `/media/Movies`.

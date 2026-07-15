@@ -27,7 +27,6 @@ export function defaultConnectionSettings(): ConnectionSettings {
       port: 22,
       username: "",
       privateKeyPath: "",
-      remoteRootPath: "",
       seedboxRoots: [],
       hasPassword: false,
       hasPrivateKeyPassphrase: false,
