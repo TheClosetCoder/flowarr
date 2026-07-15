@@ -96,7 +96,7 @@ public sealed class CleanupRecommendationService(
                     CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath, isSuggestedKeep: false);
             }
 
-            CleanupCandidate? leftoverDuplicateFlag = null;
+            CleanupCandidate? leftoverFlag = null;
             if (duplicateVersions.Count > 0 && anyDuplicateStillPending)
             {
                 // Also surface the largest copy as a candidate in its own group - flagged only as
@@ -110,15 +110,16 @@ public sealed class CleanupRecommendationService(
             }
             else if (existingByPath.TryGetValue(kept.FilePath, out var existingKept)
                 && existingKept.Status == CleanupStatus.PendingReview
-                && existingKept.ReasonType == CleanupReasonType.Duplicate)
+                && (existingKept.ReasonType == CleanupReasonType.Duplicate || existingKept.ReasonType == CleanupReasonType.Stale))
             {
                 // There's no active duplicate situation for this file anymore - either every
                 // sibling has been resolved, or (when tied file sizes make "largest" ambiguous
                 // between scans) the user deleted the one previously suggested to keep instead of
-                // the one flagged as the extra copy, leaving this row's Duplicate flag stale
-                // regardless of which role (IsSuggestedKeep true or false) it was carrying. Remove
-                // it unless the staleness check below reclaims the row for a real reason.
-                leftoverDuplicateFlag = existingKept;
+                // the one flagged as the extra copy. The existing row might be a stale Duplicate
+                // flag for that reason, or a stale Stale flag left over from before staleAfterDays
+                // was raised past this file's age - either way, remove it unless the staleness
+                // check below reclaims the row for a still-valid reason.
+                leftoverFlag = existingKept;
             }
 
             var staleReason = GetStaleReason(kept, now, staleAfter);
@@ -127,9 +128,9 @@ public sealed class CleanupRecommendationService(
                 TryAddCandidate(newCandidates, existingByPath, touchedPaths, kept, staleReason, CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Stale, duplicateGroupKey: null, keptPath: null);
             }
-            else if (leftoverDuplicateFlag is not null)
+            else if (leftoverFlag is not null)
             {
-                dbContext.CleanupCandidates.Remove(leftoverDuplicateFlag);
+                dbContext.CleanupCandidates.Remove(leftoverFlag);
             }
         }
 
