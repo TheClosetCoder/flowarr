@@ -1,19 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: flowarr-postgres
-    environment:
-      POSTGRES_DB: flowarr
-      POSTGRES_USER: flowarr
-      POSTGRES_PASSWORD: flowarr
-    volumes:
-      - flowarr-postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U flowarr -d flowarr"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   api:
     container_name: flowarr-api
     build:
@@ -21,7 +6,7 @@ services:
       dockerfile: backend/Flowarr.Api/Dockerfile
     environment:
       ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__Flowarr: Host=postgres;Port=5432;Database=flowarr;Username=flowarr;Password=flowarr
+      ConnectionStrings__Flowarr: Data Source=/var/lib/flowarr/data/flowarr.db
       Flowarr__QBittorrent__BaseUrl: ${FLOWARR_QBITTORRENT_BASE_URL:-}
       Flowarr__QBittorrent__Username: ${FLOWARR_QBITTORRENT_USERNAME:-}
       Flowarr__QBittorrent__Password: ${FLOWARR_QBITTORRENT_PASSWORD:-}
@@ -43,14 +28,12 @@ services:
       Flowarr__SftpSeedbox__PrivateKeyPath: ${FLOWARR_SFTP_PRIVATE_KEY_PATH:-}
       Flowarr__SftpSeedbox__RemoteRootPath: ${FLOWARR_SFTP_REMOTE_ROOT_PATH:-}
       Flowarr__Security__DataProtectionKeysPath: /var/lib/flowarr/keys
-    depends_on:
-      postgres:
-        condition: service_healthy
     volumes:
       - ${FLOWARR_MEDIA_ROOT:-./mnt/media}:/media
       - ${FLOWARR_SEEDBOX_MOUNT_PATH:-./data/seedbox}:/seedbox:ro
       - ${FLOWARR_SFTP_PRIVATE_KEY_HOST_PATH:-./data/keys}:/keys:ro
       - flowarr-keys:/var/lib/flowarr/keys
+      - flowarr-data:/var/lib/flowarr/data
     ports:
       - "8080:8080"
     healthcheck:
@@ -59,21 +42,6 @@ services:
       timeout: 5s
       retries: 5
 
-  frontend:
-    container_name: flowarr-frontend
-    build:
-      context: ..
-      dockerfile: frontend/Dockerfile
-    depends_on:
-      - api
-    ports:
-      - "5173:80"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
 volumes:
-  flowarr-postgres:
   flowarr-keys:
+  flowarr-data:

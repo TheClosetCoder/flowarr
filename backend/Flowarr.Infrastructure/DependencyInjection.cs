@@ -17,9 +17,9 @@ public static class DependencyInjection
         services.Configure<IntegrationOptions>(options => configuration.GetSection("Flowarr").Bind(options));
 
         var connectionString = configuration.GetConnectionString("Flowarr")
-            ?? "Host=localhost;Port=5432;Database=flowarr;Username=flowarr;Password=flowarr";
+            ?? "Data Source=/var/lib/flowarr/data/flowarr.db";
 
-        services.AddDbContext<FlowarrDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddDbContext<FlowarrDbContext>(options => options.UseSqlite(connectionString));
         services.AddMemoryCache();
         services.AddScoped<IAdminAuthService, AdminAuthService>();
         services.AddScoped<IJobRunService, JobRunService>();

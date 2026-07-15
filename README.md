@@ -6,10 +6,10 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 
 ## What Flowarr Does
 
-- Provides a Docker-based self-hosted web app with a dark, Radarr/Sonarr-style dashboard.
-- Ships a custom app icon and web manifest so it can be installed as an app from a phone or tablet's browser ("Add to Home Screen").
-- Exposes a .NET 8 REST API with Swagger and `/health`.
-- Uses PostgreSQL through Entity Framework Core.
+- Ships as a single Docker container with a dark, Radarr/Sonarr-style dashboard.
+- Ships a custom app icon, web manifest, and service worker so it installs as a real standalone app from a phone or tablet's browser ("Install app" / "Add to Home Screen").
+- Exposes a .NET 8 REST API with Swagger and `/health`, and serves the built frontend directly — no separate frontend container or reverse proxy needed.
+- Uses an embedded SQLite database through Entity Framework Core — no separate database container to run.
 - Includes a React, TypeScript, and Tailwind frontend.
 - Tracks media items, downloads, media files, storage locations, cleanup candidates, and audit logs.
 - Runs scheduled sync jobs through .NET hosted services and records job history, including live progress for long-running jobs (e.g. Plex library scans).
@@ -47,11 +47,7 @@ FLOWARR_MEDIA_ROOT=/mnt/media
 
 Inside Flowarr, use the container paths under `/media`, for example `/media/Movies` or `/media/TV Shows`.
 
-Open:
-
-- Frontend: `http://localhost:5173`
-- API Swagger: `http://localhost:8080/swagger`
-- Health: `http://localhost:8080/health`
+Open `http://localhost:8080` for the dashboard. Swagger is at `http://localhost:8080/swagger`, health at `http://localhost:8080/health`.
 
 ## Initial Environment Variables
 
@@ -82,7 +78,7 @@ FLOWARR_SFTP_REMOTE_ROOT_PATH=
 The API also supports .NET environment variable binding:
 
 ```bash
-ConnectionStrings__Flowarr=Host=postgres;Port=5432;Database=flowarr;Username=flowarr;Password=flowarr
+ConnectionStrings__Flowarr=Data Source=/var/lib/flowarr/data/flowarr.db
 Flowarr__Cleanup__DryRun=true
 Flowarr__Cleanup__AllowDelete=false
 Flowarr__Storage__LocalPath=/media
@@ -95,7 +91,7 @@ Flowarr__AutoDownload__LocalImportPath=/media/import
 
 Flowarr can pull completed or seeding downloads from a remote seedbox over SFTP into one or more local media paths.
 
-You can configure Deluge or qBittorrent, SFTP seedbox, Radarr, Sonarr, Plex, and auto-download settings from the Connections page in the app. Deluge Web only needs its web password; qBittorrent can use username and password. Passwords, API keys, and key passphrases are encrypted before being stored in PostgreSQL using ASP.NET Core Data Protection. The Docker Compose file persists the encryption key ring in the `flowarr-keys` volume so saved credentials remain readable after container rebuilds.
+You can configure Deluge or qBittorrent, SFTP seedbox, Radarr, Sonarr, Plex, and auto-download settings from the Connections page in the app. Deluge Web only needs its web password; qBittorrent can use username and password. Passwords, API keys, and key passphrases are encrypted before being stored in the SQLite database using ASP.NET Core Data Protection. The Docker Compose file persists the encryption key ring in the `flowarr-keys` volume and the database file in the `flowarr-data` volume so saved credentials and data remain readable after container rebuilds.
 
 You can also seed defaults with `.env`:
 
@@ -148,7 +144,7 @@ volumes:
 
 - Secret fields are never returned by the API after save.
 - The app returns `hasPassword` and `hasPrivateKeyPassphrase` flags instead.
-- Secrets are encrypted at rest before being written to PostgreSQL.
+- Secrets are encrypted at rest before being written to the database.
 - Keep the `flowarr-keys` Docker volume. Removing it can make existing encrypted credentials unreadable.
 
 ## Cleanup Rules
@@ -192,9 +188,9 @@ On first launch, Flowarr asks you to create a local admin account. The password 
 
 ## Database Upgrades
 
-Flowarr applies EF Core migrations at API startup. The baseline migration is upgrade-safe for existing POC databases and removes the old example mock rows if they are still present.
+Flowarr uses an embedded SQLite database (`flowarr.db`, persisted via the `flowarr-data` Docker volume) and applies EF Core migrations at API startup — no separate database container or manual setup required.
 
-**Never edit a migration after it has shipped.** EF Core tracks which migration IDs have already run per database in `__EFMigrationsHistory`; editing an already-applied migration's `Up()` has no effect on environments that already ran it, since `Migrate()` only checks the ID, not the file contents. Add a new migration instead — every migration in this repo after the baseline uses `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` so they're safe to run against databases at different points in history.
+**Never edit a migration after it has shipped.** EF Core tracks which migration IDs have already run per database in `__EFMigrationsHistory`; editing an already-applied migration's `Up()` has no effect on environments that already ran it, since `Migrate()` only checks the ID, not the file contents. Add a new migration instead, generated with `dotnet dotnet-ef migrations add <Name> --project backend/Flowarr.Infrastructure --startup-project backend/Flowarr.Api -o Migrations`.
 
 ## Deploying to a Remote Host
 

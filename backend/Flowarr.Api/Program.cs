@@ -51,10 +51,22 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors("Frontend");
+app.UseDefaultFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        if (context.File.Name == "sw.js")
+        {
+            context.Context.Response.Headers.CacheControl = "no-cache";
+        }
+    }
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health").AllowAnonymous();
 app.MapControllers();
+app.MapFallbackToFile("index.html").AllowAnonymous();
 
 using (var scope = app.Services.CreateScope())
 {
