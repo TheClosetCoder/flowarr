@@ -1,6 +1,6 @@
 services:
   api:
-    container_name: flowarr-api
+    container_name: Flowarr
     build:
       context: ..
       dockerfile: backend/Flowarr.Api/Dockerfile
