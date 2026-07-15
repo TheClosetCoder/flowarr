@@ -66,20 +66,27 @@ public sealed class CleanupRecommendationService(
         {
             // Plex represents multiple physical copies of the same title as multiple Media
             // entries under one item - keep the largest (best-quality proxy), flag the rest.
-            var versions = group.OrderByDescending(item => item.FileSizeBytes).ToList();
+            // Files already deleted are excluded before picking "kept" - Plex may not have
+            // refreshed yet and can still report a deleted file as a version, and when two
+            // versions tie on size, which one sorts first isn't guaranteed to stay consistent
+            // between scans. Without this, a deleted-but-still-reported file could keep winning
+            // the "largest" comparison, permanently stranding its actually-existing sibling with
+            // a stale Duplicate flag.
+            var versions = group.Where(item => File.Exists(item.FilePath)).OrderByDescending(item => item.FileSizeBytes).ToList();
+            if (versions.Count == 0)
+            {
+                continue;
+            }
+
             var kept = versions[0];
             var duplicateVersions = versions.Skip(1).ToList();
 
             // Whether at least one sibling copy is still awaiting a decision. A sibling that was
-            // rejected (kept on disk, decision recorded) or deleted no longer needs action, so it
-            // shouldn't keep the group's "suggested keep" marker alive on its own. Deleted rows
-            // are excluded from existingByPath, so a deleted sibling looks "not found" here - the
-            // File.Exists check is what actually distinguishes that from a genuinely new,
-            // never-seen-before duplicate (which is also "not found" but very much still pending).
+            // rejected (kept on disk, decision recorded) no longer needs action, so it shouldn't
+            // keep the group's "suggested keep" marker alive on its own.
             var anyDuplicateStillPending = duplicateVersions.Any(duplicate =>
-                File.Exists(duplicate.FilePath) &&
-                (!existingByPath.TryGetValue(duplicate.FilePath, out var existingDuplicate)
-                    || existingDuplicate.Status == CleanupStatus.PendingReview));
+                !existingByPath.TryGetValue(duplicate.FilePath, out var existingDuplicate)
+                || existingDuplicate.Status == CleanupStatus.PendingReview);
 
             foreach (var duplicate in duplicateVersions)
             {
@@ -89,7 +96,7 @@ public sealed class CleanupRecommendationService(
                     CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath, isSuggestedKeep: false);
             }
 
-            CleanupCandidate? leftoverKeepMarker = null;
+            CleanupCandidate? leftoverDuplicateFlag = null;
             if (duplicateVersions.Count > 0 && anyDuplicateStillPending)
             {
                 // Also surface the largest copy as a candidate in its own group - flagged only as
@@ -103,12 +110,15 @@ public sealed class CleanupRecommendationService(
             }
             else if (existingByPath.TryGetValue(kept.FilePath, out var existingKept)
                 && existingKept.Status == CleanupStatus.PendingReview
-                && existingKept.IsSuggestedKeep)
+                && existingKept.ReasonType == CleanupReasonType.Duplicate)
             {
-                // Every sibling duplicate has been resolved (deleted or rejected) - or there
-                // never were any left after Plex's report changed - so this marker no longer
-                // means anything. Remove it unless the staleness check below reclaims the row.
-                leftoverKeepMarker = existingKept;
+                // There's no active duplicate situation for this file anymore - either every
+                // sibling has been resolved, or (when tied file sizes make "largest" ambiguous
+                // between scans) the user deleted the one previously suggested to keep instead of
+                // the one flagged as the extra copy, leaving this row's Duplicate flag stale
+                // regardless of which role (IsSuggestedKeep true or false) it was carrying. Remove
+                // it unless the staleness check below reclaims the row for a real reason.
+                leftoverDuplicateFlag = existingKept;
             }
 
             var staleReason = GetStaleReason(kept, now, staleAfter);
@@ -117,9 +127,9 @@ public sealed class CleanupRecommendationService(
                 TryAddCandidate(newCandidates, existingByPath, touchedPaths, kept, staleReason, CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Stale, duplicateGroupKey: null, keptPath: null);
             }
-            else if (leftoverKeepMarker is not null)
+            else if (leftoverDuplicateFlag is not null)
             {
-                dbContext.CleanupCandidates.Remove(leftoverKeepMarker);
+                dbContext.CleanupCandidates.Remove(leftoverDuplicateFlag);
             }
         }
 
