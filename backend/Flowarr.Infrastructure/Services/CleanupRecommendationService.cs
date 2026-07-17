@@ -149,15 +149,23 @@ public sealed class CleanupRecommendationService(
 
         foreach (var titleGroup in possibleDuplicateTitles)
         {
-            foreach (var item in titleGroup)
+            var groupItems = titleGroup.ToList();
+            foreach (var item in groupItems)
             {
                 if (touchedPaths.Contains(item.FilePath))
                 {
                     continue;
                 }
 
+                // Name the other entry/entries sharing this title in the reason itself, since the
+                // UI only clusters same-key candidates that are still PendingReview - once one
+                // sibling is approved/rejected it drops out of that view, and without this the
+                // remaining one gives no clue what it was ever flagged against.
+                var otherPaths = groupItems.Where(other => other.FilePath != item.FilePath).Select(other => other.FilePath).ToList();
+                var reason = $"Possible duplicate title: \"{item.Title}\" also appears under a separate Plex entry at {string.Join(", ", otherPaths)}. Review manually.";
+
                 TryAddCandidate(newCandidates, existingByPath, touchedPaths, item,
-                    $"Possible duplicate title: \"{item.Title}\" appears under multiple separate Plex entries. Review manually.",
+                    reason,
                     CleanupMatchConfidence.Uncertain, options.Value.Cleanup.DryRun,
                     CleanupReasonType.Duplicate, $"title:{NormalizeTitle(item.Title)}", keptPath: null);
             }
