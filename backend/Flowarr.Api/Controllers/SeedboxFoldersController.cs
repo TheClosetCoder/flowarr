@@ -32,7 +32,7 @@ public sealed class SeedboxFoldersController(IConnectionSettingsService connecti
             return Ok(new SeedboxFolderListing(string.Empty, null, roots.Select(root => new SeedboxFolderEntry(root.Name, root.Path)).ToList()));
         }
 
-        var normalized = path.TrimEnd('/');
+        var normalized = RemotePathUtils.NormalizePosixPath(path);
         if (!roots.Any(root => normalized.Equals(root.Path.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) ||
                                normalized.StartsWith(root.Path.TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase)))
         {

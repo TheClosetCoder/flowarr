@@ -8,7 +8,7 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 
 - Ships as a single Docker container with a dark, Radarr/Sonarr-style dashboard.
 - Ships a custom app icon, web manifest, and service worker so it installs as a real standalone app from a phone or tablet's browser ("Install app" / "Add to Home Screen").
-- Exposes a .NET 8 REST API with Swagger and `/health`, and serves the built frontend directly — no separate frontend container or reverse proxy needed.
+- Exposes a .NET 8 REST API and `/health`, and serves the built frontend directly — no separate frontend container needed (Swagger is available in local development only).
 - Uses an embedded SQLite database through Entity Framework Core — no separate database container to run.
 - Includes a React, TypeScript, and Tailwind frontend.
 - Tracks media items, downloads, media files, storage locations, cleanup candidates, and audit logs.
@@ -47,7 +47,7 @@ FLOWARR_MEDIA_ROOT=/mnt/media
 
 Inside Flowarr, use the container paths under `/media`, for example `/media/Movies` or `/media/TV Shows`.
 
-Open `http://localhost:8080` for the dashboard. Swagger is at `http://localhost:8080/swagger`, health at `http://localhost:8080/health`.
+Open `http://localhost:8080` for the dashboard, health at `http://localhost:8080/health`.
 
 ## Initial Environment Variables
 
@@ -182,7 +182,11 @@ All of this is wired up via `<link>`/`<meta>` tags in `frontend/index.html` (fav
 
 ## Authentication
 
-On first launch, Flowarr asks you to create a local admin account. The password must be at least 12 characters and is stored as a salted PBKDF2 hash. API routes require the admin session cookie except `/health` and first-run auth endpoints.
+On first launch, Flowarr asks you to create a local admin account. The password must be at least 12 characters and is stored as a salted PBKDF2 hash. API routes require the admin session cookie except `/health` and first-run auth endpoints. Complete this first-run setup on your local network before exposing the instance to the internet.
+
+## Exposing Flowarr to the Internet
+
+Flowarr itself serves plain HTTP with no TLS. Don't forward its port directly to the internet — put a TLS-terminating reverse proxy in front of it instead (nginx, Caddy, Traefik, or a Cloudflare Tunnel). Flowarr trusts `X-Forwarded-For`/`X-Forwarded-Proto` headers from any source, so make sure inbound internet traffic can only reach it through that proxy (e.g. a Cloudflare Tunnel with no router port-forward, or a firewall rule that only allows the reverse proxy's host/network to reach the published port).
 
 ## Database Upgrades
 

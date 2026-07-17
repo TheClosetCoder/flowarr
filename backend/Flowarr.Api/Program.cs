@@ -3,6 +3,7 @@ using Flowarr.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Flowarr.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -44,12 +45,26 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod()
             .AllowCredentials());
 });
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    // The reverse proxy (nginx, Cloudflare Tunnel, etc.) sits on a network we can't know in
+    // advance, so trust forwarded headers from any address rather than only loopback.
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 builder.Services.AddFlowarrInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
+app.UseForwardedHeaders();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
 app.UseCors("Frontend");
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions

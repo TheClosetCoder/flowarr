@@ -171,12 +171,10 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
         var root = (_seedbox?.SeedboxRoots.FirstOrDefault(item => item.Enabled && item.Kind.Equals("Download", StringComparison.OrdinalIgnoreCase))?.Path
             ?? _seedbox?.SeedboxRoots.FirstOrDefault(item => item.Enabled && !string.IsNullOrWhiteSpace(item.Path))?.Path
             ?? string.Empty).TrimEnd('/');
-        if (string.IsNullOrWhiteSpace(root) || remotePath.StartsWith("/", StringComparison.Ordinal))
-        {
-            return remotePath;
-        }
-
-        return $"{root}/{remotePath.TrimStart('/')}";
+        var combined = string.IsNullOrWhiteSpace(root) || remotePath.StartsWith("/", StringComparison.Ordinal)
+            ? remotePath
+            : $"{root}/{remotePath.TrimStart('/')}";
+        return RemotePathUtils.NormalizePosixPath(combined);
     }
 
     private bool IsWithinConfiguredRoots(string remotePath)
