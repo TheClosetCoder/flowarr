@@ -10,3 +10,5 @@ data/
 *.db
 *.db-shm
 *.db-wal
+scripts/deploy-to-proxmox.ps1
+scripts/set-env-and-redeploy.ps1

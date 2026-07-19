@@ -214,16 +214,6 @@ Flowarr uses an embedded SQLite database (`flowarr.db`, persisted via the `flowa
 
 **Never edit a migration after it has shipped.** EF Core tracks which migration IDs have already run per database in `__EFMigrationsHistory`; editing an already-applied migration's `Up()` has no effect on environments that already ran it, since `Migrate()` only checks the ID, not the file contents. Add a new migration instead, generated with `dotnet dotnet-ef migrations add <Name> --project backend/Flowarr.Infrastructure --startup-project backend/Flowarr.Api -o Migrations`.
 
-## Deploying to a Remote Host
-
-`scripts/deploy-to-proxmox.ps1` is a PowerShell script for redeploying to a host reachable over SSH (written for a Proxmox host but not Proxmox-specific): it locates the `flowarr` checkout on the remote host automatically, runs `git pull`, rebuilds the Docker images, and restarts the containers. Run it from a PowerShell prompt in the repo root:
-
-```powershell
-./scripts/deploy-to-proxmox.ps1 -ProxmoxHost <host-or-ip> -User <ssh-user>
-```
-
-It prompts for the SSH password interactively and never stores credentials. If the remote's `origin` is a private GitHub repo, set up a dedicated deploy key on that host (a fresh keypair added as a read-only GitHub Deploy Key) rather than reusing any existing host identity key.
-
 ## Project Structure
 
 ```text
@@ -234,8 +224,6 @@ backend/
 frontend/
 docker/
   docker-compose.yml
-scripts/
-  deploy-to-proxmox.ps1
 ```
 
 ## Current Limitations
