@@ -46,7 +46,12 @@ export function Dashboard({
         <Metric icon={HardDrive} title="Local used" value={formatBytes(dashboard?.localStorage.usedBytes ?? 0)} sub={`${formatBytes(dashboard?.localStorage.freeBytes ?? 0)} free`} />
         <Metric icon={Server} title="Seedbox used" value={formatBytes(dashboard?.seedboxStorage.usedBytes ?? 0)} sub={`${formatBytes(dashboard?.seedboxStorage.freeBytes ?? 0)} free`} />
         <Metric icon={Download} title="Active transfers" value={String(activeCount)} sub="SFTP + torrent client combined" />
-        <Metric icon={Trash2} title="Cleanup candidates" value={String(dashboard?.cleanupCandidates.length ?? 0)} sub="Manual review required" />
+        <Metric
+          icon={Trash2}
+          title="Cleanup candidates"
+          value={String((dashboard?.cleanupStats.pendingDuplicateCount ?? 0) + (dashboard?.cleanupStats.pendingStaleCount ?? 0))}
+          sub="Manual review required"
+        />
       </div>
 
       <Card>
