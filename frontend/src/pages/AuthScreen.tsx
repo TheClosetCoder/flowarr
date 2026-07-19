@@ -23,7 +23,7 @@ export function AuthScreen({ setupRequired, onAuthenticated }: { setupRequired: 
       <div className="w-full max-w-sm rounded-lg border border-line bg-surface p-5">
         <div className="mb-5 flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-md bg-accent text-bg">
-            <FlowarrMark size={21} />
+            <FlowarrMark size={28} />
           </div>
           <div>
             <h1 className="text-lg font-semibold text-ink">Flowarr</h1>
