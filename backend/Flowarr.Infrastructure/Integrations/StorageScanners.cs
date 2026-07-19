@@ -272,11 +272,6 @@ public sealed class SeedboxStorageScanner(
 
     private static string NormalizeRemotePath(string root, string remotePath)
     {
-        if (!string.IsNullOrWhiteSpace(remotePath) && remotePath.StartsWith("/", StringComparison.Ordinal))
-        {
-            return remotePath;
-        }
-
         if (string.IsNullOrWhiteSpace(root))
         {
             return remotePath;
