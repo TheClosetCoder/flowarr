@@ -8,7 +8,7 @@ export function SettingsPanel({ transferSettings, jobs }: { transferSettings: Tr
     <section className="space-y-4">
       <Card>
         <CardHeader title="Runtime configuration" />
-        <p className="text-sm text-muted">Configure PostgreSQL, torrent client, SFTP seedbox access, storage paths, and dry-run behavior with environment variables in Docker Compose.</p>
+        <p className="text-sm text-muted">Configure the database connection string, storage paths, and dry-run behavior with environment variables in Docker Compose. Torrent client, SFTP seedbox access, and other integrations are configured in the tabs above.</p>
       </Card>
       <Card>
         <CardHeader title="Auto download" />

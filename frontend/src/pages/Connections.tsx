@@ -7,20 +7,25 @@ import { Input } from "../components/Input";
 import { SectionHeader } from "../components/SectionHeader";
 import { LocalFolderBrowser } from "../components/LocalFolderBrowser";
 import { SeedboxFolderBrowser } from "../components/SeedboxFolderBrowser";
-import type { ArrSettings, ConnectionSettings, ConnectionTestResult, LocalMediaPath, SeedboxRoot, TransferRule } from "../types";
+import { SettingsPanel } from "./Settings";
+import type { ArrSettings, ConnectionSettings, ConnectionTestResult, JobRun, LocalMediaPath, SeedboxRoot, TransferRule, TransferSettings } from "../types";
 
 export function Connections({
   settings,
   error,
   activeTab,
   onTabChange,
-  onSaved
+  onSaved,
+  transferSettings,
+  jobs
 }: {
   settings: ConnectionSettings | null;
   error: string;
   activeTab: string;
   onTabChange: (tab: string) => void;
   onSaved: () => Promise<void>;
+  transferSettings: TransferSettings | null;
+  jobs: JobRun[];
 }) {
   if (!settings) {
     return (
@@ -33,12 +38,26 @@ export function Connections({
 
   return (
     <section className="space-y-4">
-      <ConnectionForms settings={settings} activeTab={activeTab} onTabChange={onTabChange} onSaved={onSaved} />
+      <ConnectionForms settings={settings} activeTab={activeTab} onTabChange={onTabChange} onSaved={onSaved} transferSettings={transferSettings} jobs={jobs} />
     </section>
   );
 }
 
-function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settings: ConnectionSettings; activeTab: string; onTabChange: (tab: string) => void; onSaved: () => Promise<void> }) {
+function ConnectionForms({
+  settings,
+  activeTab,
+  onTabChange,
+  onSaved,
+  transferSettings,
+  jobs
+}: {
+  settings: ConnectionSettings;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  onSaved: () => Promise<void>;
+  transferSettings: TransferSettings | null;
+  jobs: JobRun[];
+}) {
   const [qbittorrent, setQbittorrent] = React.useState({ ...settings.qbittorrent, password: "", clearPassword: false });
   const [sftpSeedbox, setSftpSeedbox] = React.useState({ ...settings.sftpSeedbox, seedboxRoots: settings.sftpSeedbox.seedboxRoots.map((root) => ({ ...root, id: root.id ?? createClientId() })), password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
   const [autoDownload, setAutoDownload] = React.useState({ ...settings.autoDownload, allowedExtensionsText: settings.autoDownload.allowedExtensions.join(", ") });
@@ -192,6 +211,7 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
           navigateToConnectionTab(tab);
         }}
         tabs={[
+          { id: "general", label: "General" },
           { id: "torrent", label: "Torrent Client" },
           { id: "sftp", label: "SFTP" },
           { id: "services", label: "Services" },
@@ -199,6 +219,8 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
           { id: "jellyfin", label: "Jellyfin" }
         ]}
       />
+
+      {activeTab === "general" && <SettingsPanel transferSettings={transferSettings} jobs={jobs} />}
 
       {activeTab === "torrent" && (
         <Card>
@@ -208,7 +230,7 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
           />
           <div className="mt-4 grid gap-3">
             <label className="flex items-center gap-2 text-sm text-ink">
-              <input type="checkbox" checked={qbittorrent.enabled} onChange={(event) => setQbittorrent({ ...qbittorrent, enabled: event.target.checked })} />
+              <input type="checkbox" className="h-4 w-4 accent-accent" checked={qbittorrent.enabled} onChange={(event) => setQbittorrent({ ...qbittorrent, enabled: event.target.checked })} />
               Enabled
             </label>
             <label className="grid gap-1 text-sm">
@@ -230,7 +252,7 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
             <p className="text-xs text-muted">Leave blank to use the saved encrypted password. Typed passwords are sent once to the Flowarr API for save/test.</p>
             {qbittorrent.hasPassword && (
               <label className="flex items-center gap-2 text-sm text-muted">
-                <input type="checkbox" checked={qbittorrent.clearPassword} onChange={(event) => setQbittorrent({ ...qbittorrent, clearPassword: event.target.checked })} />
+                <input type="checkbox" className="h-4 w-4 accent-accent" checked={qbittorrent.clearPassword} onChange={(event) => setQbittorrent({ ...qbittorrent, clearPassword: event.target.checked })} />
                 Clear saved password
               </label>
             )}
@@ -253,7 +275,7 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
           />
           <div className="mt-4 grid gap-3">
             <label className="flex items-center gap-2 text-sm text-ink">
-              <input type="checkbox" checked={sftpSeedbox.enabled} onChange={(event) => setSftpSeedbox({ ...sftpSeedbox, enabled: event.target.checked })} />
+              <input type="checkbox" className="h-4 w-4 accent-accent" checked={sftpSeedbox.enabled} onChange={(event) => setSftpSeedbox({ ...sftpSeedbox, enabled: event.target.checked })} />
               Enabled
             </label>
             <Input label="Host" value={sftpSeedbox.host} onChange={(value) => setSftpSeedbox({ ...sftpSeedbox, host: value })} placeholder="your-ultra-sftp-host" />
@@ -287,7 +309,7 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
               {sftpSeedbox.seedboxRoots.map((root, index) => (
                 <div key={root.id ?? index} className="grid gap-2 rounded-md border border-line bg-surfaceMuted p-3 md:grid-cols-[auto_1fr_1fr_2fr_auto]">
                   <label className="flex items-center gap-2 text-sm text-ink">
-                    <input type="checkbox" checked={root.enabled} onChange={(event) => updateSeedboxRoot(index, { enabled: event.target.checked })} />
+                    <input type="checkbox" className="h-4 w-4 accent-accent" checked={root.enabled} onChange={(event) => updateSeedboxRoot(index, { enabled: event.target.checked })} />
                     Enabled
                   </label>
                   <Input label="Name" value={root.name} onChange={(value) => updateSeedboxRoot(index, { name: value })} placeholder="Movies" />
@@ -306,13 +328,13 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
             <div className="grid gap-2 text-sm text-muted">
               {sftpSeedbox.hasPassword && (
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={sftpSeedbox.clearPassword} onChange={(event) => setSftpSeedbox({ ...sftpSeedbox, clearPassword: event.target.checked })} />
+                  <input type="checkbox" className="h-4 w-4 accent-accent" checked={sftpSeedbox.clearPassword} onChange={(event) => setSftpSeedbox({ ...sftpSeedbox, clearPassword: event.target.checked })} />
                   Clear saved password
                 </label>
               )}
               {sftpSeedbox.hasPrivateKeyPassphrase && (
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={sftpSeedbox.clearPrivateKeyPassphrase} onChange={(event) => setSftpSeedbox({ ...sftpSeedbox, clearPrivateKeyPassphrase: event.target.checked })} />
+                  <input type="checkbox" className="h-4 w-4 accent-accent" checked={sftpSeedbox.clearPrivateKeyPassphrase} onChange={(event) => setSftpSeedbox({ ...sftpSeedbox, clearPrivateKeyPassphrase: event.target.checked })} />
                   Clear saved key passphrase
                 </label>
               )}
@@ -340,11 +362,11 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
         <h3 className="font-medium text-ink">Auto download</h3>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="flex items-center gap-2 text-sm text-ink">
-            <input type="checkbox" checked={autoDownload.enabled} onChange={(event) => setAutoDownload({ ...autoDownload, enabled: event.target.checked })} />
+            <input type="checkbox" className="h-4 w-4 accent-accent" checked={autoDownload.enabled} onChange={(event) => setAutoDownload({ ...autoDownload, enabled: event.target.checked })} />
             Enabled
           </label>
           <label className="flex items-center gap-2 text-sm text-ink">
-            <input type="checkbox" checked={autoDownload.overwriteExisting} onChange={(event) => setAutoDownload({ ...autoDownload, overwriteExisting: event.target.checked })} />
+            <input type="checkbox" className="h-4 w-4 accent-accent" checked={autoDownload.overwriteExisting} onChange={(event) => setAutoDownload({ ...autoDownload, overwriteExisting: event.target.checked })} />
             Overwrite existing files
           </label>
           <LocalPathInput label="Legacy fallback destination" value={autoDownload.localImportPath} onChange={(value) => setAutoDownload({ ...autoDownload, localImportPath: value })} placeholder="/media/import" />
@@ -372,6 +394,7 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
               <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
+                  className="h-4 w-4 accent-accent"
                   checked={path.enabled}
                   onChange={(event) => updateLocalMediaPath(index, { enabled: event.target.checked })}
                 />
@@ -411,6 +434,7 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
               <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
+                  className="h-4 w-4 accent-accent"
                   checked={rule.enabled}
                   onChange={(event) => updateTransferRule(index, { enabled: event.target.checked })}
                 />
@@ -434,6 +458,7 @@ function ConnectionForms({ settings, activeTab, onTabChange, onSaved }: { settin
               <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
+                  className="h-4 w-4 accent-accent"
                   checked={rule.deleteRemoteAfterDownload}
                   onChange={(event) => updateTransferRule(index, { deleteRemoteAfterDownload: event.target.checked })}
                 />
@@ -510,14 +535,14 @@ function ArrConnectionCard({
       <h3 className="font-medium text-ink">{title}</h3>
       <div className="mt-4 grid gap-3">
         <label className="flex items-center gap-2 text-sm text-ink">
-          <input type="checkbox" checked={value.enabled} onChange={(event) => onChange({ ...value, enabled: event.target.checked })} />
+          <input type="checkbox" className="h-4 w-4 accent-accent" checked={value.enabled} onChange={(event) => onChange({ ...value, enabled: event.target.checked })} />
           Enabled
         </label>
         <Input label="Base URL" value={value.baseUrl} onChange={(baseUrl) => onChange({ ...value, baseUrl })} placeholder={`https://your-${title.toLowerCase()}-host`} />
         <Input label={value.hasApiKey ? `${apiKeyLabel} (already saved)` : apiKeyLabel} type="password" value={value.apiKey} onChange={(apiKey) => onChange({ ...value, apiKey })} placeholder={value.hasApiKey ? "Leave blank to keep current" : ""} />
         {value.hasApiKey && (
           <label className="flex items-center gap-2 text-sm text-muted">
-            <input type="checkbox" checked={value.clearApiKey} onChange={(event) => onChange({ ...value, clearApiKey: event.target.checked })} />
+            <input type="checkbox" className="h-4 w-4 accent-accent" checked={value.clearApiKey} onChange={(event) => onChange({ ...value, clearApiKey: event.target.checked })} />
             Clear saved {apiKeyLabel.toLowerCase()}
           </label>
         )}

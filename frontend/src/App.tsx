@@ -1,5 +1,5 @@
 import React from "react";
-import { Activity, Download, FolderDown, HardDrive, Plug, Settings, Trash2 } from "lucide-react";
+import { Activity, Download, FolderDown, HardDrive, Settings, Trash2 } from "lucide-react";
 import { fetchJson, postJson } from "./api";
 import { getRouteFromHash, navigateToPage } from "./routing";
 import { normalizeConnectionSettings } from "./settingsHelpers";
@@ -12,7 +12,6 @@ import { Storage } from "./pages/Storage";
 import { Downloads } from "./pages/Downloads";
 import { Transfers } from "./pages/Transfers";
 import { Cleanup } from "./pages/Cleanup";
-import { SettingsPanel } from "./pages/Settings";
 import type {
   AuthStatus,
   CleanupCandidateSummary,
@@ -28,7 +27,6 @@ import type {
 
 const pages: PageDefinition[] = [
   { name: "Dashboard", icon: Activity },
-  { name: "Connections", icon: Plug },
   { name: "Storage", icon: HardDrive },
   { name: "Downloads", icon: Download },
   { name: "Transfers", icon: FolderDown },
@@ -167,12 +165,21 @@ export function App() {
               torrentClientConfigured={Boolean(connectionSettings?.qbittorrent.enabled && connectionSettings.qbittorrent.baseUrl)}
             />
           )}
-          {activePage === "Connections" && <Connections settings={connectionSettings} error={settingsError} activeTab={connectionTab} onTabChange={setConnectionTab} onSaved={refreshSettings} />}
           {activePage === "Storage" && <Storage storage={storage} setStorage={setStorage} />}
           {activePage === "Downloads" && <Downloads downloads={downloads} />}
           {activePage === "Transfers" && <Transfers transfers={transfers} settings={transferSettings} setTransfers={setTransfers} />}
           {activePage === "Cleanup" && <Cleanup candidates={candidates} setCandidates={setCandidates} />}
-          {activePage === "Settings" && <SettingsPanel transferSettings={transferSettings} jobs={jobs} />}
+          {activePage === "Settings" && (
+            <Connections
+              settings={connectionSettings}
+              error={settingsError}
+              activeTab={connectionTab}
+              onTabChange={setConnectionTab}
+              onSaved={refreshSettings}
+              transferSettings={transferSettings}
+              jobs={jobs}
+            />
+          )}
         </div>
       </main>
     </div>
