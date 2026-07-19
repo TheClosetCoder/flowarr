@@ -1,6 +1,5 @@
 using Flowarr.Core.Enums;
 using Flowarr.Core.Entities;
-using Flowarr.Core.Integrations;
 using Flowarr.Core.Models;
 using Flowarr.Infrastructure.Data;
 using Flowarr.Infrastructure.Services;
@@ -13,17 +12,11 @@ namespace Flowarr.Api.Controllers;
 [Route("api/dashboard")]
 public sealed class DashboardController(
     FlowarrDbContext dbContext,
-    IDownloadClient downloadClient,
-    IEnumerable<IStorageScanner> storageScanners,
-    IStorageSyncService storageSyncService,
-    IConnectionSettingsService connectionSettingsService,
-    ILogger<DashboardController> logger) : ControllerBase
+    IConnectionSettingsService connectionSettingsService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<DashboardSummary>> Get(CancellationToken cancellationToken)
     {
-        await RefreshDashboardSourcesAsync(cancellationToken);
-
         var storage = await dbContext.StorageLocations
             .OrderBy(location => location.Kind)
             .ThenBy(location => location.Name)
@@ -176,63 +169,4 @@ public sealed class DashboardController(
         var localName = Path.GetFileName(localPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         return string.IsNullOrWhiteSpace(localName) ? remotePath : localName;
     }
-
-    private async Task RefreshDashboardSourcesAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await RefreshDownloadsAsync(cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Dashboard torrent client refresh failed; returning last known download data.");
-        }
-
-        try
-        {
-            await storageSyncService.SyncAsync(storageScanners, cancellationToken: cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Dashboard storage refresh failed; returning last known storage data.");
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-    }
-
-    private async Task RefreshDownloadsAsync(CancellationToken cancellationToken)
-    {
-        var snapshots = await downloadClient.GetDownloadsAsync(cancellationToken);
-
-        foreach (var snapshot in snapshots)
-        {
-            var download = await FindDownloadAsync(snapshot, cancellationToken);
-            if (download is null)
-            {
-                download = new Download { Id = Guid.NewGuid(), Hash = snapshot.Hash };
-                dbContext.Downloads.Add(download);
-            }
-
-            download.Client = snapshot.Client;
-            download.Name = snapshot.Name;
-            download.Hash = snapshot.Hash;
-            download.Status = snapshot.Status;
-            download.Progress = snapshot.Progress;
-            download.SizeBytes = snapshot.SizeBytes;
-            download.RemotePath = snapshot.RemotePath;
-            download.UpdatedAt = DateTimeOffset.UtcNow;
-        }
-    }
-
-    private Task<Download?> FindDownloadAsync(DownloadSnapshot snapshot, CancellationToken cancellationToken)
-    {
-        return string.IsNullOrWhiteSpace(snapshot.Hash)
-            ? dbContext.Downloads.FirstOrDefaultAsync(download =>
-                download.Client == snapshot.Client &&
-                download.Name == snapshot.Name &&
-                download.RemotePath == snapshot.RemotePath,
-                cancellationToken)
-            : dbContext.Downloads.FirstOrDefaultAsync(download => download.Hash == snapshot.Hash, cancellationToken);
-    }
-
 }
