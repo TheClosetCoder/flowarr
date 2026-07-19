@@ -94,8 +94,8 @@ public sealed class DashboardController(
         var seedbox = storage.Where(item => item.Kind == StorageKind.Seedbox);
 
         return new DashboardSummary(
-            new StorageSummary(local.Sum(item => item.UsedBytes), local.Sum(item => item.FreeBytes)),
-            new StorageSummary(seedbox.Sum(item => item.UsedBytes), seedbox.Sum(item => item.FreeBytes)),
+            new StorageSummary(local.Sum(item => item.UsedBytes), SumDistinctFreeBytes(local)),
+            new StorageSummary(seedbox.Sum(item => item.UsedBytes), SumDistinctFreeBytes(seedbox)),
             activeDownloads,
             recentImports,
             cleanupCandidates,
@@ -168,5 +168,15 @@ public sealed class DashboardController(
 
         var localName = Path.GetFileName(localPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         return string.IsNullOrWhiteSpace(localName) ? remotePath : localName;
+    }
+
+    // Free space is reported per configured folder, but folders sharing the same physical disk
+    // (local) or the same account/host (seedbox) always report the identical figure - summing
+    // every row would multiply that one real number by however many folders point at it. Distinct
+    // values are summed once each instead, which also still adds up correctly across folders that
+    // genuinely live on different disks/hosts (those report different figures).
+    private static long SumDistinctFreeBytes(IEnumerable<StorageLocation> items)
+    {
+        return items.Select(item => item.FreeBytes).Distinct().Sum();
     }
 }
