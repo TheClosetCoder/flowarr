@@ -1,5 +1,7 @@
 # Flowarr
 
+[![Publish Docker image](https://github.com/TheClosetCoder/flowarr/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/TheClosetCoder/flowarr/actions/workflows/docker-publish.yml)
+
 Flowarr is a self-hosted media operations dashboard for people running seedboxes, download clients, and the Arr ecosystem.
 
 It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show storage usage, download state, media lifecycle state, and cleanup recommendations in one place.
@@ -28,9 +30,27 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 - It does not make uncertain matches silently safe.
 - It does not integrate with Jellyfin yet.
 
+## Quick Start
+
+Flowarr ships as a single prebuilt image published to GitHub Container Registry — no build step, no separate database container:
+
+```bash
+docker run -d \
+  --name flowarr \
+  -p 8080:8080 \
+  -v /mnt/media:/media \
+  -v flowarr-data:/var/lib/flowarr/data \
+  -v flowarr-keys:/var/lib/flowarr/keys \
+  ghcr.io/theclosetcoder/flowarr:latest
+```
+
+Open `http://localhost:8080` and complete first-run admin setup. `flowarr-data` holds the SQLite database and `flowarr-keys` holds the credential-encryption key ring — keep both volumes across upgrades. Add further `-v /mnt/diskN/Folder:/media/Folder` mounts for additional media disks.
+
+To pin a version instead of following `latest`, use a tag from the [Packages page](https://github.com/TheClosetCoder/flowarr/pkgs/container/flowarr) (e.g. `ghcr.io/theclosetcoder/flowarr:v1.2.0`).
+
 ## Run With Docker Compose
 
-From the repository root:
+Prefer Compose if you want `.env`-driven integration settings (qBittorrent, Radarr, Sonarr, SFTP) instead of one-off `-e` flags. From the repository root:
 
 ```bash
 cd docker
