@@ -144,6 +144,21 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
   }
 
   React.useEffect(() => {
+    void (async () => {
+      try {
+        const runs = await fetchJson<JobRun[]>("/api/jobs");
+        const running = runs.find((run) => run.jobType === "cleanup.generate" && run.status === "Running");
+        if (running) {
+          setMessage(running.progress || "Generating recommendations...");
+          setGeneratingJobId(running.id);
+        }
+      } catch {
+        // Best-effort resume - if this fails, the "Generate recommendations" button just stays clickable.
+      }
+    })();
+  }, []);
+
+  React.useEffect(() => {
     if (!generatingJobId) {
       return;
     }

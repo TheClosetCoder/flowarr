@@ -47,6 +47,21 @@ export function Storage({ storage, setStorage }: { storage: StorageLocation[]; s
   }
 
   React.useEffect(() => {
+    void (async () => {
+      try {
+        const runs = await fetchJson<JobRun[]>("/api/jobs");
+        const running = runs.find((run) => run.jobType === "storage.scan" && run.status === "Running");
+        if (running) {
+          setMessage(running.progress || "Scanning...");
+          setScanningJobId(running.id);
+        }
+      } catch {
+        // Best-effort resume - if this fails, the "Scan now" button just stays clickable.
+      }
+    })();
+  }, []);
+
+  React.useEffect(() => {
     if (!scanningJobId) {
       return;
     }
