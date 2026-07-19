@@ -7,16 +7,16 @@ namespace Flowarr.Infrastructure.Services;
 
 public interface IStorageSyncService
 {
-    Task SyncAsync(IEnumerable<IStorageScanner> scanners, CancellationToken cancellationToken = default);
+    Task SyncAsync(IEnumerable<IStorageScanner> scanners, Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default);
 }
 
 public sealed class StorageSyncService(FlowarrDbContext dbContext) : IStorageSyncService
 {
-    public async Task SyncAsync(IEnumerable<IStorageScanner> scanners, CancellationToken cancellationToken = default)
+    public async Task SyncAsync(IEnumerable<IStorageScanner> scanners, Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
         foreach (var scanner in scanners)
         {
-            var snapshots = await scanner.ScanAsync(cancellationToken);
+            var snapshots = await scanner.ScanAsync(onProgress: onProgress, cancellationToken: cancellationToken);
             foreach (var snapshot in snapshots)
             {
                 var location = await dbContext.StorageLocations

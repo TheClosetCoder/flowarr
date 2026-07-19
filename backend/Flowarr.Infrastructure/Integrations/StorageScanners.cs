@@ -13,7 +13,7 @@ public sealed class LocalStorageScanner(
     IConnectionSettingsService connectionSettingsService,
     IOptions<IntegrationOptions> options) : IStorageScanner
 {
-    public async Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
         var autoDownload = await connectionSettingsService.GetAutoDownloadAsync(cancellationToken);
         var paths = autoDownload.LocalMediaPaths
@@ -23,11 +23,22 @@ public sealed class LocalStorageScanner(
                 .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.LocalPath))
                 .Select(rule => new { Name = $"Local rule: {rule.Name}", Path = rule.LocalPath, Category = StorageCategory.Rule }))
             .Concat([new { Name = "Local media", Path = options.Value.Storage.LocalPath, Category = StorageCategory.Monitored }])
-            .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(item => (Path: item.Path.ToLowerInvariant(), item.Category))
             .Select(group => group.First())
             .ToList();
 
-        return paths.Select(item => BuildSnapshot(item.Name, item.Path, item.Category)).ToList();
+        var results = new List<StorageSnapshot>();
+        foreach (var item in paths)
+        {
+            if (onProgress is not null)
+            {
+                await onProgress($"Scanning local folder: {item.Name}...");
+            }
+
+            results.Add(BuildSnapshot(item.Name, item.Path, item.Category));
+        }
+
+        return results;
     }
 
     private static StorageSnapshot BuildSnapshot(string name, string path, StorageCategory category)
@@ -74,7 +85,7 @@ public sealed class SeedboxStorageScanner(
     private const string AccountUsedBytesCacheKey = "seedbox-account-used-bytes";
     private static readonly TimeSpan AccountUsageCacheDuration = TimeSpan.FromMinutes(15);
 
-    public async Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
         var seedbox = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
         var autoDownload = await connectionSettingsService.GetAutoDownloadAsync(cancellationToken);
@@ -96,21 +107,31 @@ public sealed class SeedboxStorageScanner(
             .Select(rule => new { Name = $"Seedbox rule: {rule.Name}", Path = NormalizeRemotePath(GetRootForRule(seedbox, rule), rule.RemotePathPrefix), Category = StorageCategory.Rule })
             .Concat(configuredRoots)
             .Where(item => !string.IsNullOrWhiteSpace(item.Path))
-            .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(item => (Path: item.Path.ToLowerInvariant(), item.Category))
             .Select(group => group.First())
             .ToList();
 
-        return await Task.Run<IReadOnlyCollection<StorageSnapshot>>(() =>
+        return await Task.Run<IReadOnlyCollection<StorageSnapshot>>(async () =>
         {
             var snapshots = new List<StorageSnapshot>();
             using var client = CreateClient(seedbox);
             client.Connect();
+
+            if (onProgress is not null && seedbox.AccountQuotaBytes > 0)
+            {
+                await onProgress("Scanning seedbox account usage against your configured quota (this can take a while for large accounts)...");
+            }
 
             var accountFreeBytes = GetAccountFreeBytes(client, seedbox, cancellationToken);
 
             foreach (var remotePath in remotePaths)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (onProgress is not null)
+                {
+                    await onProgress($"Scanning seedbox root: {remotePath.Name} ({remotePath.Path})...");
+                }
+
                 snapshots.Add(BuildSftpSnapshot(client, remotePath.Name, remotePath.Path, remotePath.Category, accountFreeBytes, cancellationToken));
             }
 

@@ -3,6 +3,7 @@ using Flowarr.Infrastructure.Data;
 using Flowarr.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Flowarr.Api.Controllers;
 
@@ -10,8 +11,9 @@ namespace Flowarr.Api.Controllers;
 [Route("api/storage")]
 public sealed class StorageController(
     FlowarrDbContext dbContext,
-    IEnumerable<IStorageScanner> storageScanners,
-    IStorageSyncService storageSyncService) : ControllerBase
+    IJobRunService jobRunService,
+    IServiceScopeFactory scopeFactory,
+    ILogger<StorageController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -27,7 +29,10 @@ public sealed class StorageController(
     [HttpPost("scan")]
     public async Task<IActionResult> Scan(CancellationToken cancellationToken)
     {
-        await storageSyncService.SyncAsync(storageScanners, cancellationToken);
-        return await Get(cancellationToken);
+        var run = await jobRunService.StartAsync("storage.scan", cancellationToken);
+
+        _ = Task.Run(() => StorageScanRunner.RunTrackedAsync(scopeFactory, run.Id, logger, CancellationToken.None));
+
+        return Accepted(new { jobId = run.Id });
     }
 }

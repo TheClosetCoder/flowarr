@@ -12,5 +12,5 @@ public interface IMediaCatalogClient
 
 public interface IStorageScanner
 {
-    Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<StorageSnapshot>> ScanAsync(Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default);
 }

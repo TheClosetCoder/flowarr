@@ -113,7 +113,7 @@ public sealed class FlowarrSyncHostedService(
         var scanners = services.GetServices<IStorageScanner>();
         foreach (var scanner in scanners)
         {
-            var snapshots = await scanner.ScanAsync(cancellationToken);
+            var snapshots = await scanner.ScanAsync(cancellationToken: cancellationToken);
             foreach (var snapshot in snapshots)
             {
                 var location = await dbContext.StorageLocations

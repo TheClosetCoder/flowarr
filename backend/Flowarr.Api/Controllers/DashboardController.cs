@@ -190,7 +190,7 @@ public sealed class DashboardController(
 
         try
         {
-            await storageSyncService.SyncAsync(storageScanners, cancellationToken);
+            await storageSyncService.SyncAsync(storageScanners, cancellationToken: cancellationToken);
         }
         catch (Exception ex)
         {
