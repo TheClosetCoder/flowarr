@@ -33,7 +33,8 @@ public sealed record CleanupCandidateSummary(
     string? SeriesTitle = null,
     int? SeasonNumber = null,
     string? ReasonType = null,
-    string? DuplicateGroupKey = null);
+    string? DuplicateGroupKey = null,
+    int? EpisodeNumber = null);
 
 public sealed record CleanupStats(
     int PendingDuplicateCount,

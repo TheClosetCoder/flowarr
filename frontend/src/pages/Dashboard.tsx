@@ -183,7 +183,7 @@ export function Dashboard({
               {dashboard.cleanupCandidates.map((item) => (
                 <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-ink">{item.seriesTitle ? `${item.seriesTitle}${typeof item.seasonNumber === "number" ? ` - Season ${item.seasonNumber}` : ""}` : basenameOf(item.path)}</p>
+                    <p className="truncate text-sm text-ink">{item.seriesTitle ? `${item.seriesTitle}${formatSeasonEpisode(item.seasonNumber, item.episodeNumber)}` : basenameOf(item.path)}</p>
                     {item.seriesTitle && <p className="truncate text-xs text-muted">{basenameOf(item.path)}</p>}
                     {item.reasonType === "Duplicate" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Copy size={12} /> Duplicate</span>}
                     {item.reasonType === "Stale" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Clock size={12} /> Stale / unwatched</span>}
@@ -203,4 +203,10 @@ export function Dashboard({
 
 function basenameOf(path: string) {
   return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || path;
+}
+
+function formatSeasonEpisode(seasonNumber?: number, episodeNumber?: number) {
+  if (typeof seasonNumber !== "number") return "";
+  if (typeof episodeNumber === "number") return ` - Season ${seasonNumber}, Episode ${episodeNumber}`;
+  return ` - Season ${seasonNumber}`;
 }

@@ -85,7 +85,8 @@ public sealed class DashboardController(
                 candidate.SeriesTitle,
                 candidate.SeasonNumber,
                 candidate.ReasonType.ToString(),
-                candidate.DuplicateGroupKey))
+                candidate.DuplicateGroupKey,
+                candidate.EpisodeNumber))
             .ToList();
 
         var cleanupStats = await BuildCleanupStatsAsync(cancellationToken);
