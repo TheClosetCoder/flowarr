@@ -1,6 +1,7 @@
 # Flowarr
 
 [![Publish Docker image](https://github.com/TheClosetCoder/flowarr/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/TheClosetCoder/flowarr/actions/workflows/docker-publish.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 Flowarr is a self-hosted media operations dashboard for people running seedboxes, download clients, and the Arr ecosystem.
 
@@ -232,3 +233,7 @@ docker/
 - Cleanup real deletion is guarded but still intentionally conservative; keep dry-run enabled unless you have verified roots and paths.
 - Jellyfin integration remains future work (Plex is supported).
 - Cleanup candidate paths depend on Plex and Flowarr resolving the same file paths (see Cleanup Rules above).
+
+## License
+
+Flowarr is licensed under the [Apache License, Version 2.0](LICENSE).
