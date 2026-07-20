@@ -1,21 +1,23 @@
 import React from "react";
-import { ChevronLeft, ChevronRight, Clock, Copy, Download, HardDrive, ImportIcon, Server, Trash2 } from "lucide-react";
-import { fetchJson, postEmpty } from "../api";
+import { ChevronLeft, ChevronRight, Clock, Copy, Download, HardDrive, ImportIcon, RefreshCw, Server, Trash2 } from "lucide-react";
+import { fetchJson, postEmpty, postJson } from "../api";
 import { Card, CardHeader } from "../components/Card";
 import { EmptyState } from "../components/EmptyState";
 import { Metric } from "../components/Metric";
 import { ActivityRow } from "../components/ActivityRow";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes, formatRelativeTime, getDisplayTitle, isTransferActive } from "../format";
-import type { DashboardSummary, RemoteTransfer } from "../types";
+import type { DashboardSummary, JobRun, RemoteTransfer } from "../types";
 
 export function Dashboard({
   dashboard,
+  setDashboard,
   transfers,
   setTransfers,
   torrentClientConfigured
 }: {
   dashboard: DashboardSummary | null;
+  setDashboard: (summary: DashboardSummary) => void;
   transfers: RemoteTransfer[];
   setTransfers: (items: RemoteTransfer[]) => void;
   torrentClientConfigured: boolean;
@@ -31,6 +33,54 @@ export function Dashboard({
   const currentTorrentPage = Math.min(torrentPage, torrentPageCount - 1);
   const pagedDownloads = allDownloads.slice(currentTorrentPage * torrentsPerPage, currentTorrentPage * torrentsPerPage + torrentsPerPage);
 
+  const [syncingJobId, setSyncingJobId] = React.useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = React.useState("");
+
+  async function syncNow() {
+    try {
+      setSyncMessage("Starting sync...");
+      const { jobId } = await postJson<{ jobId: string }>("/api/sync");
+      setSyncingJobId(jobId);
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : "Failed to start sync.");
+    }
+  }
+
+  React.useEffect(() => {
+    if (!syncingJobId) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const runs = await fetchJson<JobRun[]>("/api/jobs");
+          const run = runs.find((item) => item.id === syncingJobId);
+          if (!run || run.status === "Running") {
+            setSyncMessage("Syncing downloads, media, and storage...");
+            return;
+          }
+
+          window.clearInterval(timer);
+          setSyncingJobId(null);
+
+          if (run.status === "Succeeded") {
+            setDashboard(await fetchJson<DashboardSummary>("/api/dashboard"));
+            setSyncMessage("Sync complete.");
+          } else {
+            setSyncMessage(run.errorMessage || `Sync ${run.status.toLowerCase()}.`);
+          }
+        } catch (error) {
+          window.clearInterval(timer);
+          setSyncingJobId(null);
+          setSyncMessage(error instanceof Error ? error.message : "Failed to check sync progress.");
+        }
+      })();
+    }, 1500);
+
+    return () => window.clearInterval(timer);
+  }, [syncingJobId, setDashboard]);
+
   async function cancelTransfer(transfer: RemoteTransfer) {
     if (transfer.status === "Running" && !window.confirm(`Cancel "${getDisplayTitle(transfer.remotePath, transfer.localPath)}"? The partially downloaded file will be deleted.`)) {
       return;
@@ -42,6 +92,18 @@ export function Dashboard({
 
   return (
     <section className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => void syncNow()}
+          disabled={syncingJobId !== null}
+          className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-bg disabled:cursor-wait disabled:opacity-60"
+        >
+          <RefreshCw size={16} className={syncingJobId !== null ? "animate-spin" : undefined} />
+          {syncingJobId !== null ? "Syncing..." : "Sync now"}
+        </button>
+        {syncMessage && <p className="text-sm text-muted">{syncMessage}</p>}
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Metric icon={HardDrive} title="Local used" value={formatBytes(dashboard?.localStorage.usedBytes ?? 0)} sub={`${formatBytes(dashboard?.localStorage.freeBytes ?? 0)} free`} />
         <Metric icon={Server} title="Seedbox used" value={formatBytes(dashboard?.seedboxStorage.usedBytes ?? 0)} sub={`${formatBytes(dashboard?.seedboxStorage.freeBytes ?? 0)} free`} />

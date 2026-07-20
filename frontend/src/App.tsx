@@ -181,6 +181,7 @@ export function App() {
           {activePage === "Dashboard" && (
             <Dashboard
               dashboard={dashboard}
+              setDashboard={setDashboard}
               transfers={transfers}
               setTransfers={setTransfers}
               torrentClientConfigured={Boolean(connectionSettings?.qbittorrent.enabled && connectionSettings.qbittorrent.baseUrl)}
