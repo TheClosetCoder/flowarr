@@ -154,21 +154,21 @@ export function Dashboard({
         <Card>
           <CardHeader title="Cleanup" description="Space that could be reclaimed right now." />
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+            <div className="min-w-0 rounded-md border border-line bg-surfaceMuted/40 p-3">
               <p className="text-xs text-muted">Duplicates</p>
               <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.pendingDuplicateCount ?? 0} file(s)</p>
               <p className="text-xs text-muted">{formatBytes(dashboard?.cleanupStats.pendingDuplicateBytes ?? 0)}</p>
             </div>
-            <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+            <div className="min-w-0 rounded-md border border-line bg-surfaceMuted/40 p-3">
               <p className="text-xs text-muted">Stale / unwatched</p>
               <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.pendingStaleCount ?? 0} file(s)</p>
               <p className="text-xs text-muted">{formatBytes(dashboard?.cleanupStats.pendingStaleBytes ?? 0)}</p>
             </div>
-            <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+            <div className="min-w-0 rounded-md border border-line bg-surfaceMuted/40 p-3">
               <p className="text-xs text-muted">Space freed to date</p>
               <p className="mt-1 font-medium text-ink">{formatBytes(dashboard?.cleanupStats.lifetimeFreedBytes ?? 0)}</p>
             </div>
-            <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+            <div className="min-w-0 rounded-md border border-line bg-surfaceMuted/40 p-3">
               <p className="text-xs text-muted">Last scan</p>
               <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.lastScanAt ? formatRelativeTime(dashboard.cleanupStats.lastScanAt) : "Never"}</p>
               {dashboard?.cleanupStats.nextScanAt && <p className="text-xs text-muted">Next: {formatRelativeTime(dashboard.cleanupStats.nextScanAt)}</p>}
