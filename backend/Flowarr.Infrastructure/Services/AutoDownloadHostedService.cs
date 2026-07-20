@@ -45,6 +45,8 @@ public sealed class AutoDownloadHostedService(
                 return;
             }
 
+            var seedbox = await connectionSettings.GetSftpSeedboxAsync(cancellationToken);
+
             // A transfer can only be genuinely "Running" while this method's download loop below is
             // awaiting it; since ExecuteAsync never overlaps RunOnceAsync calls, any Running row found
             // here at the start of a cycle is orphaned from a process that died mid-download. Requeue it.
@@ -75,7 +77,7 @@ public sealed class AutoDownloadHostedService(
 
             foreach (var download in downloads)
             {
-                await TryDownloadAsync(dbContext, transferClient, connectionSettings, autoDownload, download.RemotePath!, download.Id, cancellationToken);
+                await TryDownloadAsync(dbContext, transferClient, seedbox, autoDownload, download.RemotePath!, download.Id, cancellationToken);
             }
 
             var importedFiles = (await dbContext.MediaFiles
@@ -87,12 +89,12 @@ public sealed class AutoDownloadHostedService(
 
             foreach (var file in importedFiles)
             {
-                await TryDownloadAsync(dbContext, transferClient, connectionSettings, autoDownload, file.RemotePath!, null, cancellationToken);
+                await TryDownloadAsync(dbContext, transferClient, seedbox, autoDownload, file.RemotePath!, null, cancellationToken);
             }
 
             foreach (var rule in autoDownload.TransferRules.Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.LocalPath)))
             {
-                var sourcePath = GetEffectiveSourcePrefix(rule);
+                var sourcePath = GetEffectiveSourcePrefix(seedbox, rule);
                 if (string.IsNullOrWhiteSpace(sourcePath))
                 {
                     continue;
@@ -114,7 +116,7 @@ public sealed class AutoDownloadHostedService(
 
             foreach (var transfer in queuedTransfers)
             {
-                var transferRule = FindTransferRule(autoDownload, transfer.RemotePath);
+                var transferRule = FindTransferRule(seedbox, autoDownload, transfer.RemotePath);
                 if (transferRule is null)
                 {
                     transfer.Status = TransferStatus.Skipped;
@@ -291,20 +293,19 @@ public sealed class AutoDownloadHostedService(
     private async Task TryDownloadAsync(
         FlowarrDbContext dbContext,
         IRemoteFileTransferClient transferClient,
-        IConnectionSettingsService connectionSettings,
+        SftpSeedboxConnectionSettings seedbox,
         AutoDownloadConnectionSettings autoDownload,
         string remotePath,
         Guid? downloadId,
         CancellationToken cancellationToken)
     {
-        var transferRule = FindTransferRule(autoDownload, remotePath);
+        var transferRule = FindTransferRule(seedbox, autoDownload, remotePath);
         if (transferRule is null)
         {
             logger.LogInformation("No auto-download transfer rule matched {RemotePath}", remotePath);
             return;
         }
 
-        var seedbox = await connectionSettings.GetSftpSeedboxAsync(cancellationToken);
         if (!IsAllowedSourcePath(seedbox, transferRule, remotePath))
         {
             logger.LogWarning("Skipping {RemotePath}; it is outside configured seedbox root {RootPath}.", remotePath, GetRuleRootLabel(transferRule));
@@ -379,7 +380,7 @@ public sealed class AutoDownloadHostedService(
         return transfer;
     }
 
-    private static TransferRuleSettings? FindTransferRule(AutoDownloadConnectionSettings settings, string remotePath)
+    private static TransferRuleSettings? FindTransferRule(SftpSeedboxConnectionSettings seedbox, AutoDownloadConnectionSettings settings, string remotePath)
     {
         var rules = settings.TransferRules.Length > 0
             ? settings.TransferRules
@@ -387,10 +388,10 @@ public sealed class AutoDownloadHostedService(
 
         return rules
             .Where(rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.LocalPath))
-            .OrderByDescending(rule => GetEffectiveSourcePrefix(rule).Length)
+            .OrderByDescending(rule => GetEffectiveSourcePrefix(seedbox, rule).Length)
             .FirstOrDefault(rule =>
             {
-                var prefix = GetEffectiveSourcePrefix(rule);
+                var prefix = GetEffectiveSourcePrefix(seedbox, rule);
                 return string.IsNullOrWhiteSpace(prefix) ||
                        remotePath.Equals(prefix, StringComparison.OrdinalIgnoreCase) ||
                        remotePath.StartsWith(prefix + "/", StringComparison.OrdinalIgnoreCase);
@@ -417,23 +418,32 @@ public sealed class AutoDownloadHostedService(
                                  remotePath.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string GetEffectiveSourcePrefix(TransferRuleSettings rule)
+    // A leading "/" in "Remote folder" used to be treated as a literal absolute SFTP path,
+    // bypassing the selected seedbox root entirely - but that's not what a user typing "/Movies"
+    // means when "Seedbox source root" is "Any Media root". Any leading/trailing slash is now just
+    // stripped and the value is always treated as relative to whichever root gets resolved; only
+    // when no root can be resolved at all does it fall back to being used as-is.
+    private static string GetEffectiveSourcePrefix(SftpSeedboxConnectionSettings seedbox, TransferRuleSettings rule)
     {
-        var remotePathPrefix = rule.RemotePathPrefix?.Trim() ?? string.Empty;
-        if (remotePathPrefix.StartsWith("/", StringComparison.Ordinal))
+        var remotePathPrefix = (rule.RemotePathPrefix ?? string.Empty).Trim().Trim('/');
+        var root = ResolveEffectiveRoot(seedbox, rule);
+
+        if (string.IsNullOrWhiteSpace(root))
         {
-            return remotePathPrefix.TrimEnd('/');
+            return remotePathPrefix;
         }
 
-        var sourceRoot = rule.SourceRootPath?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(sourceRoot))
-        {
-            return remotePathPrefix.TrimEnd('/');
-        }
+        return string.IsNullOrWhiteSpace(remotePathPrefix) ? root : $"{root}/{remotePathPrefix}";
+    }
 
-        return string.IsNullOrWhiteSpace(remotePathPrefix)
-            ? sourceRoot.TrimEnd('/')
-            : $"{sourceRoot.TrimEnd('/')}/{remotePathPrefix.TrimStart('/').TrimEnd('/')}";
+    private static string? ResolveEffectiveRoot(SftpSeedboxConnectionSettings seedbox, TransferRuleSettings rule)
+    {
+        return seedbox.SeedboxRoots
+            .FirstOrDefault(root => root.Enabled &&
+                (string.IsNullOrWhiteSpace(rule.SourceRootPath)
+                    ? root.Kind.Equals(rule.SourceRootKind, StringComparison.OrdinalIgnoreCase)
+                    : root.Path.Equals(rule.SourceRootPath, StringComparison.OrdinalIgnoreCase)))
+            ?.Path.TrimEnd('/');
     }
 
     private static string GetRuleRootLabel(TransferRuleSettings rule)
