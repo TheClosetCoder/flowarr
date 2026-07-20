@@ -45,3 +45,32 @@ export function getDisplayTitle(remotePath: string, localPath: string) {
   const localName = localPath.replace(/[/\\]+$/, "").split(/[/\\]/).pop();
   return localName || remotePath;
 }
+
+// Extracts a season (and episode, if present) label from a torrent/file/folder name so it can be
+// shown as its own badge - the title text alone is often truncated in the UI, which can hide the
+// season/episode part of a long name (it's rarely at the very start of the string).
+export function extractSeasonLabel(...values: string[]): string | null {
+  const text = values.join(" ");
+
+  const seasonEpisode = text.match(/[Ss](\d{1,2})[Ee](\d{1,3})/);
+  if (seasonEpisode) {
+    return `S${seasonEpisode[1].padStart(2, "0")}E${seasonEpisode[2].padStart(2, "0")}`;
+  }
+
+  const xForm = text.match(/\b(\d{1,2})x(\d{1,3})\b/);
+  if (xForm) {
+    return `S${xForm[1].padStart(2, "0")}E${xForm[2].padStart(2, "0")}`;
+  }
+
+  const seasonWord = text.match(/season[\s._-]*(\d{1,2})/i);
+  if (seasonWord) {
+    return `Season ${Number(seasonWord[1])}`;
+  }
+
+  const seasonOnly = text.match(/\bS(\d{1,2})\b/);
+  if (seasonOnly) {
+    return `S${seasonOnly[1].padStart(2, "0")}`;
+  }
+
+  return null;
+}

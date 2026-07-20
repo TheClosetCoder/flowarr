@@ -4,7 +4,7 @@ import { Card, CardHeader } from "../components/Card";
 import { Metric } from "../components/Metric";
 import { ActivityRow } from "../components/ActivityRow";
 import { EmptyState } from "../components/EmptyState";
-import { getDisplayTitle, isTransferActive } from "../format";
+import { extractSeasonLabel, getDisplayTitle, isTransferActive } from "../format";
 import type { RemoteTransfer, TransferSettings } from "../types";
 
 export function Transfers({
@@ -45,6 +45,7 @@ export function Transfers({
               <ActivityRow
                 key={item.id}
                 title={getDisplayTitle(item.remotePath, item.localPath)}
+                seasonLabel={extractSeasonLabel(item.remotePath, item.localPath)}
                 status={item.status}
                 bytesTransferred={item.bytesTransferred}
                 totalBytes={item.totalBytes}

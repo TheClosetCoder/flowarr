@@ -49,6 +49,8 @@ export function App() {
   const [transferSettings, setTransferSettings] = React.useState<TransferSettings | null>(null);
   const [connectionSettings, setConnectionSettings] = React.useState<ConnectionSettings | null>(null);
   const [settingsError, setSettingsError] = React.useState("");
+  const [syncingJobId, setSyncingJobId] = React.useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = React.useState("");
 
   const refreshSettings = React.useCallback(async () => {
     setSettingsError("");
@@ -84,7 +86,16 @@ export function App() {
       fetchJson<StorageLocation[]>("/api/storage").then(setStorage),
       fetchJson<CleanupCandidateSummary[]>("/api/cleanup/candidates?status=PendingReview").then(setCandidates),
       fetchJson<RemoteTransfer[]>("/api/transfers").then(setTransfers),
-      fetchJson<JobRun[]>("/api/jobs").then(setJobs),
+      fetchJson<JobRun[]>("/api/jobs").then((runs) => {
+        setJobs(runs);
+        // Resume showing progress after a full page reload, not just in-app navigation, if a
+        // sync was already running.
+        const running = runs.find((run) => run.jobType === "sync.all" && run.status === "Running");
+        if (running) {
+          setSyncMessage(running.progress || "Syncing downloads, media, and storage...");
+          setSyncingJobId(running.id);
+        }
+      }),
       refreshSettings()
     ]);
   }, [auth?.authenticated, refreshSettings]);
@@ -131,6 +142,53 @@ export function App() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  const syncNow = React.useCallback(async () => {
+    try {
+      setSyncMessage("Starting sync...");
+      const { jobId } = await postJson<{ jobId: string }>("/api/sync");
+      setSyncingJobId(jobId);
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : "Failed to start sync.");
+    }
+  }, []);
+
+  // Lives at the App level (not inside a page component) so it keeps polling and showing progress
+  // even if the user navigates away from Settings and back while a sync is still running.
+  React.useEffect(() => {
+    if (!syncingJobId) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const runs = await fetchJson<JobRun[]>("/api/jobs");
+          const run = runs.find((item) => item.id === syncingJobId);
+          if (!run || run.status === "Running") {
+            setSyncMessage("Syncing downloads, media, and storage...");
+            return;
+          }
+
+          window.clearInterval(timer);
+          setSyncingJobId(null);
+
+          if (run.status === "Succeeded") {
+            setDashboard(await fetchJson<DashboardSummary>("/api/dashboard"));
+            setSyncMessage("Sync complete.");
+          } else {
+            setSyncMessage(run.errorMessage || `Sync ${run.status.toLowerCase()}.`);
+          }
+        } catch (error) {
+          window.clearInterval(timer);
+          setSyncingJobId(null);
+          setSyncMessage(error instanceof Error ? error.message : "Failed to check sync progress.");
+        }
+      })();
+    }, 1500);
+
+    return () => window.clearInterval(timer);
+  }, [syncingJobId]);
 
   if (authUnreachable && !auth) {
     return (
@@ -181,7 +239,6 @@ export function App() {
           {activePage === "Dashboard" && (
             <Dashboard
               dashboard={dashboard}
-              setDashboard={setDashboard}
               transfers={transfers}
               setTransfers={setTransfers}
               torrentClientConfigured={Boolean(connectionSettings?.qbittorrent.enabled && connectionSettings.qbittorrent.baseUrl)}
@@ -200,6 +257,9 @@ export function App() {
               onSaved={refreshSettings}
               transferSettings={transferSettings}
               jobs={jobs}
+              syncingJobId={syncingJobId}
+              syncMessage={syncMessage}
+              onSyncNow={syncNow}
             />
           )}
         </div>

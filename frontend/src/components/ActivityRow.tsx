@@ -6,6 +6,7 @@ import { formatBytes, getTransferProgress, isTransferActive } from "../format";
 
 export function ActivityRow({
   title,
+  seasonLabel,
   status,
   bytesTransferred,
   totalBytes,
@@ -14,6 +15,7 @@ export function ActivityRow({
   onCancel
 }: {
   title: string;
+  seasonLabel?: string | null;
   status: string;
   bytesTransferred: number;
   totalBytes: number;
@@ -30,7 +32,12 @@ export function ActivityRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{title}</p>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {seasonLabel && (
+              <span className="flex-none rounded-full bg-accentMuted px-2 py-0.5 text-xs font-medium text-accent">{seasonLabel}</span>
+            )}
+            <p className="min-w-0 truncate text-sm font-medium text-ink">{title}</p>
+          </div>
           <div className="flex items-center gap-2">
             <StatusBadge status={status} />
             {onCancel && (

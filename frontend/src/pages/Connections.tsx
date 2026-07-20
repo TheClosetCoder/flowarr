@@ -17,7 +17,10 @@ export function Connections({
   onTabChange,
   onSaved,
   transferSettings,
-  jobs
+  jobs,
+  syncingJobId,
+  syncMessage,
+  onSyncNow
 }: {
   settings: ConnectionSettings | null;
   error: string;
@@ -26,6 +29,9 @@ export function Connections({
   onSaved: () => Promise<void>;
   transferSettings: TransferSettings | null;
   jobs: JobRun[];
+  syncingJobId: string | null;
+  syncMessage: string;
+  onSyncNow: () => void;
 }) {
   if (!settings) {
     return (
@@ -38,7 +44,17 @@ export function Connections({
 
   return (
     <section className="space-y-4">
-      <ConnectionForms settings={settings} activeTab={activeTab} onTabChange={onTabChange} onSaved={onSaved} transferSettings={transferSettings} jobs={jobs} />
+      <ConnectionForms
+        settings={settings}
+        activeTab={activeTab}
+        onTabChange={onTabChange}
+        onSaved={onSaved}
+        transferSettings={transferSettings}
+        jobs={jobs}
+        syncingJobId={syncingJobId}
+        syncMessage={syncMessage}
+        onSyncNow={onSyncNow}
+      />
     </section>
   );
 }
@@ -49,7 +65,10 @@ function ConnectionForms({
   onTabChange,
   onSaved,
   transferSettings,
-  jobs
+  jobs,
+  syncingJobId,
+  syncMessage,
+  onSyncNow
 }: {
   settings: ConnectionSettings;
   activeTab: string;
@@ -57,6 +76,9 @@ function ConnectionForms({
   onSaved: () => Promise<void>;
   transferSettings: TransferSettings | null;
   jobs: JobRun[];
+  syncingJobId: string | null;
+  syncMessage: string;
+  onSyncNow: () => void;
 }) {
   const [qbittorrent, setQbittorrent] = React.useState({ ...settings.qbittorrent, password: "", clearPassword: false });
   const [sftpSeedbox, setSftpSeedbox] = React.useState({ ...settings.sftpSeedbox, seedboxRoots: settings.sftpSeedbox.seedboxRoots.map((root) => ({ ...root, id: root.id ?? createClientId() })), password: "", clearPassword: false, privateKeyPassphrase: "", clearPrivateKeyPassphrase: false });
@@ -91,14 +113,18 @@ function ConnectionForms({
 
   async function saveTorrentClient() {
     setMessage("Saving torrent client...");
-    await putJson("/api/connections/qbittorrent", {
-      ...qbittorrent,
-      clientType: qbittorrent.clientType || "Deluge",
-      baseUrl: qbittorrent.baseUrl || "",
-      username: qbittorrent.clientType === "Deluge" ? "" : qbittorrent.username || ""
-    });
-    await onSaved();
-    setMessage("Torrent client saved securely.");
+    try {
+      await putJson("/api/connections/qbittorrent", {
+        ...qbittorrent,
+        clientType: qbittorrent.clientType || "Deluge",
+        baseUrl: qbittorrent.baseUrl || "",
+        username: qbittorrent.clientType === "Deluge" ? "" : qbittorrent.username || ""
+      });
+      await onSaved();
+      setMessage("Torrent client saved securely.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to save torrent client.");
+    }
   }
 
   async function testTorrentClient() {
@@ -125,16 +151,20 @@ function ConnectionForms({
 
   async function saveSeedbox() {
     setMessage("Saving seedbox...");
-    await putJson("/api/connections/sftp-seedbox", {
-      ...sftpSeedbox,
-      host: sftpSeedbox.host || "",
-      port: Number(sftpSeedbox.port) || 22,
-      username: sftpSeedbox.username || "",
-      privateKeyPath: sftpSeedbox.privateKeyPath || "",
-      seedboxRoots: sftpSeedbox.seedboxRoots.map(({ id, ...root }) => root)
-    });
-    await onSaved();
-    setMessage("Seedbox saved securely.");
+    try {
+      await putJson("/api/connections/sftp-seedbox", {
+        ...sftpSeedbox,
+        host: sftpSeedbox.host || "",
+        port: Number(sftpSeedbox.port) || 22,
+        username: sftpSeedbox.username || "",
+        privateKeyPath: sftpSeedbox.privateKeyPath || "",
+        seedboxRoots: sftpSeedbox.seedboxRoots.map(({ id, ...root }) => root)
+      });
+      await onSaved();
+      setMessage("Seedbox saved securely.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to save seedbox.");
+    }
   }
 
   async function testSeedbox() {
@@ -163,35 +193,43 @@ function ConnectionForms({
 
   async function saveAutoDownload() {
     setMessage("Saving auto-download...");
-    await putJson("/api/connections/auto-download", {
-      ...autoDownload,
-      allowedExtensions: autoDownload.allowedExtensionsText.split(",").map((item) => item.trim()).filter(Boolean),
-      localMediaPaths: autoDownload.localMediaPaths.map((path) => ({
-        enabled: path.enabled,
-        name: path.name || "Media path",
-        path: path.path || "/media",
-        role: path.role || "Mixed"
-      })),
-      transferRules: autoDownload.transferRules.map((rule) => ({
-        enabled: rule.enabled,
-        name: rule.name || "Rule",
-        remotePathPrefix: rule.remotePathPrefix || "",
-        localPath: rule.localPath || autoDownload.localImportPath || "/media/import",
-        sourceRootKind: rule.sourceRootKind || "Download",
-        sourceRootPath: rule.sourceRootPath || "",
-        deleteRemoteAfterDownload: rule.deleteRemoteAfterDownload || false
-      }))
-    });
-    await onSaved();
-    setMessage("Auto-download saved.");
+    try {
+      await putJson("/api/connections/auto-download", {
+        ...autoDownload,
+        allowedExtensions: autoDownload.allowedExtensionsText.split(",").map((item) => item.trim()).filter(Boolean),
+        localMediaPaths: autoDownload.localMediaPaths.map((path) => ({
+          enabled: path.enabled,
+          name: path.name || "Media path",
+          path: path.path || "/media",
+          role: path.role || "Mixed"
+        })),
+        transferRules: autoDownload.transferRules.map((rule) => ({
+          enabled: rule.enabled,
+          name: rule.name || "Rule",
+          remotePathPrefix: rule.remotePathPrefix || "",
+          localPath: rule.localPath || autoDownload.localImportPath || "/media/import",
+          sourceRootKind: rule.sourceRootKind || "Download",
+          sourceRootPath: rule.sourceRootPath || "",
+          deleteRemoteAfterDownload: rule.deleteRemoteAfterDownload || false
+        }))
+      });
+      await onSaved();
+      setMessage("Auto-download saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to save auto-download settings.");
+    }
   }
 
   async function saveArr(system: "radarr" | "sonarr" | "plex") {
     const state = system === "radarr" ? radarr : system === "sonarr" ? sonarr : plex;
     setMessage(`Saving ${system}...`);
-    await putJson(`/api/connections/${system}`, state);
-    await onSaved();
-    setMessage(`${system} saved securely.`);
+    try {
+      await putJson(`/api/connections/${system}`, state);
+      await onSaved();
+      setMessage(`${system} saved securely.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `Failed to save ${system}.`);
+    }
   }
 
   async function testArr(system: "radarr" | "sonarr" | "plex") {
@@ -220,7 +258,15 @@ function ConnectionForms({
         ]}
       />
 
-      {activeTab === "general" && <SettingsPanel transferSettings={transferSettings} jobs={jobs} />}
+      {activeTab === "general" && (
+        <SettingsPanel
+          transferSettings={transferSettings}
+          jobs={jobs}
+          syncingJobId={syncingJobId}
+          syncMessage={syncMessage}
+          onSyncNow={onSyncNow}
+        />
+      )}
 
       {activeTab === "torrent" && (
         <Card>
