@@ -119,9 +119,11 @@ public sealed class AutoDownloadHostedService(
                 var transferRule = FindTransferRule(seedbox, autoDownload, transfer.RemotePath);
                 if (transferRule is null)
                 {
+                    logger.LogInformation("No auto-download transfer rule matched queued transfer {RemotePath}; marking skipped.", transfer.RemotePath);
                     transfer.Status = TransferStatus.Skipped;
                     transfer.Message = "No auto-download transfer rule matched this path.";
                     transfer.CompletedAt = DateTimeOffset.UtcNow;
+                    await dbContext.SaveChangesAsync(cancellationToken);
                     continue;
                 }
 
