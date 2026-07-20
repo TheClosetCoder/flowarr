@@ -90,7 +90,7 @@ export function Dashboard({
                       {extractSeasonLabel(item.title) && (
                         <span className="flex-none rounded-full bg-accentMuted px-2 py-0.5 text-xs font-medium text-accent">{extractSeasonLabel(item.title)}</span>
                       )}
-                      <p className="truncate text-sm font-medium text-ink">{item.title}</p>
+                      <p className="min-w-0 truncate text-sm font-medium text-ink">{item.title}</p>
                     </div>
                     <p className="text-xs text-muted">{formatRelativeTime(item.importedAt)}</p>
                   </div>
