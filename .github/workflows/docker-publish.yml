@@ -69,6 +69,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Prepare Docker Hub description
+        if: github.ref == 'refs/heads/main'
+        # Docker Hub's description renderer doesn't render the GitHub Actions status badge (it's
+        # meaningless there anyway - it just links back to a GitHub Actions run), so strip that one
+        # line for the copy synced to Docker Hub while leaving README.md itself untouched.
+        run: grep -v '^\[!\[Publish Docker image\]' README.md > /tmp/dockerhub-readme.md
+
       - name: Update Docker Hub description
         if: github.ref == 'refs/heads/main'
         uses: peter-evans/dockerhub-description@v4
@@ -77,4 +84,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ env.DOCKERHUB_IMAGE_NAME }}
           short-description: "Self-hosted media operations dashboard for seedboxes, download clients, and the Arr ecosystem."
-          readme-filepath: ./README.md
+          readme-filepath: /tmp/dockerhub-readme.md
