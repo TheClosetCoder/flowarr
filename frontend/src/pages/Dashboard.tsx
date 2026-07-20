@@ -76,7 +76,7 @@ export function Dashboard({
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Card className={torrentClientConfigured ? undefined : "xl:col-span-2"}>
+        <Card className={torrentClientConfigured ? "min-w-0" : "min-w-0 xl:col-span-2"}>
           <CardHeader title="Recently imported" />
           {dashboard?.recentImports.length ? (
             <div className="overflow-x-auto">
@@ -105,7 +105,7 @@ export function Dashboard({
         </Card>
 
         {torrentClientConfigured && (
-          <Card>
+          <Card className="min-w-0">
             <CardHeader title="Torrent client" />
             {allDownloads.length ? (
               <div className="space-y-2">
@@ -157,7 +157,7 @@ export function Dashboard({
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
+        <Card className="min-w-0">
           <CardHeader title="Cleanup" description="Space that could be reclaimed right now." />
           <div className="overflow-x-auto">
             <div className="grid min-w-[420px] grid-cols-2 gap-3 text-sm">
@@ -184,7 +184,7 @@ export function Dashboard({
           </div>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader title="Cleanup review" />
           {dashboard?.cleanupCandidates.length ? (
             <div className="overflow-x-auto">
