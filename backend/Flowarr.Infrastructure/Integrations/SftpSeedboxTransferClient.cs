@@ -232,7 +232,10 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
             var remoteSize = client.GetAttributes(remotePath).Size;
             if (localSize == remoteSize && !autoDownload.OverwriteExisting)
             {
-                return 0;
+                // Already present and intact - not re-downloaded, but it still counts toward the
+                // transfer's total so a requeue (new sibling files added since last run) doesn't
+                // make BytesTransferred regress to just this run's delta instead of the true total.
+                return localSize;
             }
 
             // A local file that doesn't match the remote size is a partial/corrupt leftover from

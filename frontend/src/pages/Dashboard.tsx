@@ -109,24 +109,20 @@ export function Dashboard({
             <CardHeader title="Torrent client" />
             {allDownloads.length ? (
               <div className="space-y-2">
-                <div className="overflow-x-auto">
-                  <div className="min-w-max space-y-2">
-                    {pagedDownloads.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
-                        <div className="flex items-center gap-2">
-                          {extractSeasonLabel(item.name) && (
-                            <span className="flex-none whitespace-nowrap rounded-full bg-accentMuted px-2 py-0.5 text-xs font-medium text-accent">{extractSeasonLabel(item.name)}</span>
-                          )}
-                          <p className="whitespace-nowrap text-sm text-ink">{item.name}</p>
-                        </div>
-                        <div className="flex flex-none items-center gap-2">
-                          <span className="text-xs text-muted">{Math.round(item.progress * 100)}%</span>
-                          <StatusBadge status={item.status} />
-                        </div>
-                      </div>
-                    ))}
+                {pagedDownloads.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {extractSeasonLabel(item.name) && (
+                        <span className="flex-none whitespace-nowrap rounded-full bg-accentMuted px-2 py-0.5 text-xs font-medium text-accent">{extractSeasonLabel(item.name)}</span>
+                      )}
+                      <p className="min-w-0 truncate text-sm text-ink">{item.name}</p>
+                    </div>
+                    <div className="flex flex-none items-center gap-2">
+                      <span className="text-xs text-muted">{Math.round(item.progress * 100)}%</span>
+                      <StatusBadge status={item.status} />
+                    </div>
                   </div>
-                </div>
+                ))}
                 {torrentPageCount > 1 && (
                   <div className="flex items-center justify-between pt-1">
                     <button
@@ -187,20 +183,18 @@ export function Dashboard({
         <Card className="min-w-0">
           <CardHeader title="Cleanup review" />
           {dashboard?.cleanupCandidates.length ? (
-            <div className="overflow-x-auto">
-              <div className="min-w-max space-y-2">
-                {dashboard.cleanupCandidates.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
-                    <div>
-                      <p className="whitespace-nowrap text-sm text-ink">{item.seriesTitle ? `${item.seriesTitle}${formatSeasonEpisode(item.seasonNumber, item.episodeNumber)}` : basenameOf(item.path)}</p>
-                      {item.seriesTitle && <p className="whitespace-nowrap text-xs text-muted">{basenameOf(item.path)}</p>}
-                      {item.reasonType === "Duplicate" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Copy size={12} /> Duplicate</span>}
-                      {item.reasonType === "Stale" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Clock size={12} /> Stale / unwatched</span>}
-                    </div>
-                    <StatusBadge status={item.confidence} />
+            <div className="space-y-2">
+              {dashboard.cleanupCandidates.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-ink">{item.seriesTitle ? `${item.seriesTitle}${formatSeasonEpisode(item.seasonNumber, item.episodeNumber)}` : basenameOf(item.path)}</p>
+                    {item.seriesTitle && <p className="truncate text-xs text-muted">{basenameOf(item.path)}</p>}
+                    {item.reasonType === "Duplicate" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Copy size={12} /> Duplicate</span>}
+                    {item.reasonType === "Stale" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Clock size={12} /> Stale / unwatched</span>}
                   </div>
-                ))}
-              </div>
+                  <StatusBadge status={item.confidence} />
+                </div>
+              ))}
             </div>
           ) : (
             <EmptyState icon={Trash2} message="Nothing pending review." />
