@@ -25,12 +25,14 @@ public sealed class FlowarrSyncHostedService(
 
     private async Task SyncOnceAsync(CancellationToken cancellationToken)
     {
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FlowarrDbContext>();
+        var jobRuns = scope.ServiceProvider.GetRequiredService<IJobRunService>();
+        JobRun? run = null;
+
         try
         {
-            using var scope = scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<FlowarrDbContext>();
-            var jobRuns = scope.ServiceProvider.GetRequiredService<IJobRunService>();
-            var run = await jobRuns.StartAsync("sync.all", cancellationToken);
+            run = await jobRuns.StartAsync("sync.all", cancellationToken);
             await SyncDownloadsAsync(scope.ServiceProvider, dbContext, cancellationToken);
             await SyncMediaAsync(scope.ServiceProvider, dbContext, cancellationToken);
             await SyncStorageAsync(scope.ServiceProvider, dbContext, cancellationToken);
@@ -40,6 +42,10 @@ public sealed class FlowarrSyncHostedService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Flowarr sync failed");
+            if (run is not null)
+            {
+                await jobRuns.FailAsync(run, ex, cancellationToken);
+            }
         }
     }
 
