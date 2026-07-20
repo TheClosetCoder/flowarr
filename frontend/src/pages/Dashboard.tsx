@@ -79,23 +79,25 @@ export function Dashboard({
         <Card className={torrentClientConfigured ? undefined : "xl:col-span-2"}>
           <CardHeader title="Recently imported" />
           {dashboard?.recentImports.length ? (
-            <div className="space-y-2">
-              {dashboard.recentImports.map((item) => (
-                <div key={item.mediaItemId} className="flex items-center gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
-                  <div className="grid h-9 w-9 flex-none place-items-center rounded-md bg-accentMuted text-accent">
-                    <ImportIcon size={16} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      {extractSeasonLabel(item.title) && (
-                        <span className="flex-none rounded-full bg-accentMuted px-2 py-0.5 text-xs font-medium text-accent">{extractSeasonLabel(item.title)}</span>
-                      )}
-                      <p className="min-w-0 truncate text-sm font-medium text-ink">{item.title}</p>
+            <div className="overflow-x-auto">
+              <div className="min-w-max space-y-2">
+                {dashboard.recentImports.map((item) => (
+                  <div key={item.mediaItemId} className="flex items-center gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
+                    <div className="grid h-9 w-9 flex-none place-items-center rounded-md bg-accentMuted text-accent">
+                      <ImportIcon size={16} />
                     </div>
-                    <p className="text-xs text-muted">{formatRelativeTime(item.importedAt)}</p>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        {extractSeasonLabel(item.title) && (
+                          <span className="flex-none whitespace-nowrap rounded-full bg-accentMuted px-2 py-0.5 text-xs font-medium text-accent">{extractSeasonLabel(item.title)}</span>
+                        )}
+                        <p className="whitespace-nowrap text-sm font-medium text-ink">{item.title}</p>
+                      </div>
+                      <p className="whitespace-nowrap text-xs text-muted">{formatRelativeTime(item.importedAt)}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           ) : (
             <EmptyState icon={ImportIcon} message="No imports yet." />
@@ -107,20 +109,24 @@ export function Dashboard({
             <CardHeader title="Torrent client" />
             {allDownloads.length ? (
               <div className="space-y-2">
-                {pagedDownloads.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      {extractSeasonLabel(item.name) && (
-                        <span className="flex-none rounded-full bg-accentMuted px-2 py-0.5 text-xs font-medium text-accent">{extractSeasonLabel(item.name)}</span>
-                      )}
-                      <p className="min-w-0 truncate text-sm text-ink">{item.name}</p>
-                    </div>
-                    <div className="flex flex-none items-center gap-2">
-                      <span className="text-xs text-muted">{Math.round(item.progress * 100)}%</span>
-                      <StatusBadge status={item.status} />
-                    </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-max space-y-2">
+                    {pagedDownloads.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
+                        <div className="flex items-center gap-2">
+                          {extractSeasonLabel(item.name) && (
+                            <span className="flex-none whitespace-nowrap rounded-full bg-accentMuted px-2 py-0.5 text-xs font-medium text-accent">{extractSeasonLabel(item.name)}</span>
+                          )}
+                          <p className="whitespace-nowrap text-sm text-ink">{item.name}</p>
+                        </div>
+                        <div className="flex flex-none items-center gap-2">
+                          <span className="text-xs text-muted">{Math.round(item.progress * 100)}%</span>
+                          <StatusBadge status={item.status} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
                 {torrentPageCount > 1 && (
                   <div className="flex items-center justify-between pt-1">
                     <button
@@ -153,25 +159,27 @@ export function Dashboard({
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader title="Cleanup" description="Space that could be reclaimed right now." />
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="min-w-0 rounded-md border border-line bg-surfaceMuted/40 p-3">
-              <p className="text-xs text-muted">Duplicates</p>
-              <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.pendingDuplicateCount ?? 0} file(s)</p>
-              <p className="text-xs text-muted">{formatBytes(dashboard?.cleanupStats.pendingDuplicateBytes ?? 0)}</p>
-            </div>
-            <div className="min-w-0 rounded-md border border-line bg-surfaceMuted/40 p-3">
-              <p className="text-xs text-muted">Stale / unwatched</p>
-              <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.pendingStaleCount ?? 0} file(s)</p>
-              <p className="text-xs text-muted">{formatBytes(dashboard?.cleanupStats.pendingStaleBytes ?? 0)}</p>
-            </div>
-            <div className="min-w-0 rounded-md border border-line bg-surfaceMuted/40 p-3">
-              <p className="text-xs text-muted">Space freed to date</p>
-              <p className="mt-1 font-medium text-ink">{formatBytes(dashboard?.cleanupStats.lifetimeFreedBytes ?? 0)}</p>
-            </div>
-            <div className="min-w-0 rounded-md border border-line bg-surfaceMuted/40 p-3">
-              <p className="text-xs text-muted">Last scan</p>
-              <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.lastScanAt ? formatRelativeTime(dashboard.cleanupStats.lastScanAt) : "Never"}</p>
-              {dashboard?.cleanupStats.nextScanAt && <p className="text-xs text-muted">Next: {formatRelativeTime(dashboard.cleanupStats.nextScanAt)}</p>}
+          <div className="overflow-x-auto">
+            <div className="grid min-w-[420px] grid-cols-2 gap-3 text-sm">
+              <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+                <p className="text-xs text-muted">Duplicates</p>
+                <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.pendingDuplicateCount ?? 0} file(s)</p>
+                <p className="text-xs text-muted">{formatBytes(dashboard?.cleanupStats.pendingDuplicateBytes ?? 0)}</p>
+              </div>
+              <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+                <p className="text-xs text-muted">Stale / unwatched</p>
+                <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.pendingStaleCount ?? 0} file(s)</p>
+                <p className="text-xs text-muted">{formatBytes(dashboard?.cleanupStats.pendingStaleBytes ?? 0)}</p>
+              </div>
+              <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+                <p className="text-xs text-muted">Space freed to date</p>
+                <p className="mt-1 font-medium text-ink">{formatBytes(dashboard?.cleanupStats.lifetimeFreedBytes ?? 0)}</p>
+              </div>
+              <div className="rounded-md border border-line bg-surfaceMuted/40 p-3">
+                <p className="text-xs text-muted">Last scan</p>
+                <p className="mt-1 font-medium text-ink">{dashboard?.cleanupStats.lastScanAt ? formatRelativeTime(dashboard.cleanupStats.lastScanAt) : "Never"}</p>
+                {dashboard?.cleanupStats.nextScanAt && <p className="text-xs text-muted">Next: {formatRelativeTime(dashboard.cleanupStats.nextScanAt)}</p>}
+              </div>
             </div>
           </div>
         </Card>
@@ -179,18 +187,20 @@ export function Dashboard({
         <Card>
           <CardHeader title="Cleanup review" />
           {dashboard?.cleanupCandidates.length ? (
-            <div className="space-y-2">
-              {dashboard.cleanupCandidates.map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-ink">{item.seriesTitle ? `${item.seriesTitle}${formatSeasonEpisode(item.seasonNumber, item.episodeNumber)}` : basenameOf(item.path)}</p>
-                    {item.seriesTitle && <p className="truncate text-xs text-muted">{basenameOf(item.path)}</p>}
-                    {item.reasonType === "Duplicate" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Copy size={12} /> Duplicate</span>}
-                    {item.reasonType === "Stale" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Clock size={12} /> Stale / unwatched</span>}
+            <div className="overflow-x-auto">
+              <div className="min-w-max space-y-2">
+                {dashboard.cleanupCandidates.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surfaceMuted/40 p-3">
+                    <div>
+                      <p className="whitespace-nowrap text-sm text-ink">{item.seriesTitle ? `${item.seriesTitle}${formatSeasonEpisode(item.seasonNumber, item.episodeNumber)}` : basenameOf(item.path)}</p>
+                      {item.seriesTitle && <p className="whitespace-nowrap text-xs text-muted">{basenameOf(item.path)}</p>}
+                      {item.reasonType === "Duplicate" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Copy size={12} /> Duplicate</span>}
+                      {item.reasonType === "Stale" && <span className="inline-flex items-center gap-1 text-xs text-muted"><Clock size={12} /> Stale / unwatched</span>}
+                    </div>
+                    <StatusBadge status={item.confidence} />
                   </div>
-                  <StatusBadge status={item.confidence} />
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           ) : (
             <EmptyState icon={Trash2} message="Nothing pending review." />
