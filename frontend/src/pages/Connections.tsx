@@ -602,13 +602,14 @@ function PlannedServicePanel({ name }: { name: string }) {
 }
 
 function SeedboxRootSelect({ roots, rule, onChange }: { roots: SeedboxRoot[]; rule: TransferRule; onChange: (root: SeedboxRoot | null) => void }) {
+  const isStale = Boolean(rule.sourceRootPath) && !roots.some((root) => root.path === rule.sourceRootPath);
   return (
     <label className="grid gap-1 text-sm">
       <span className="text-muted">Seedbox source root</span>
       <select
         value={rule.sourceRootPath}
         onChange={(event) => onChange(roots.find((root) => root.path === event.target.value) ?? null)}
-        className="rounded-md border border-line bg-surface px-3 py-2 text-ink"
+        className={`rounded-md border bg-surface px-3 py-2 text-ink ${isStale ? "border-danger" : "border-line"}`}
       >
         <option value="">Any {rule.sourceRootKind || "Download"} root</option>
         {roots.map((root) => (
@@ -617,6 +618,11 @@ function SeedboxRootSelect({ roots, rule, onChange }: { roots: SeedboxRoot[]; ru
           </option>
         ))}
       </select>
+      {isStale && (
+        <span className="text-xs text-danger">
+          Root not found: {rule.sourceRootPath} - this rule won't match anything. Pick a root above to fix it.
+        </span>
+      )}
     </label>
   );
 }

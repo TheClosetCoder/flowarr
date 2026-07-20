@@ -151,6 +151,7 @@ public sealed class ConnectionSettingsService(
     public async Task SaveSftpSeedboxAsync(SaveSftpSeedboxConnectionRequest request, CancellationToken cancellationToken = default)
     {
         var existing = await GetConnectionAsync("sftpSeedbox", cancellationToken);
+        var previousRoots = GetSeedboxRoots(ReadSettings(existing));
         var secrets = ReadSecrets(existing);
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
@@ -184,6 +185,65 @@ public sealed class ConnectionSettingsService(
                 ["accountQuotaBytes"] = request.AccountQuotaBytes.ToString()
             },
             secrets,
+            cancellationToken);
+
+        await MigrateTransferRuleRootPathsAsync(previousRoots, request.SeedboxRoots ?? [], cancellationToken);
+    }
+
+    /// <summary>
+    /// Transfer rules pin themselves to a seedbox root by its literal Path at the time it was picked,
+    /// not by a stable reference. If a root's Path is edited afterward (e.g. broadened for the account
+    /// quota feature), every rule pointing at the old Path would otherwise silently stop matching
+    /// anything, with no indication why - roots are matched across the edit by (Name, Kind) since Path
+    /// is the thing that can change, and any rule pinned to an old Path is carried forward to the new one.
+    /// </summary>
+    private async Task MigrateTransferRuleRootPathsAsync(
+        SeedboxRootSettings[] previousRoots,
+        SeedboxRootSettings[] newRoots,
+        CancellationToken cancellationToken)
+    {
+        var pathChanges = previousRoots
+            .Join(newRoots,
+                previous => (previous.Name, previous.Kind),
+                current => (current.Name, current.Kind),
+                (previous, current) => (OldPath: previous.Path, NewPath: current.Path))
+            .Where(change => !string.IsNullOrWhiteSpace(change.OldPath) && !change.OldPath.Equals(change.NewPath, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (pathChanges.Count == 0)
+        {
+            return;
+        }
+
+        var autoDownload = await GetAutoDownloadAsync(cancellationToken);
+        var changed = false;
+        var updatedRules = autoDownload.TransferRules
+            .Select(rule =>
+            {
+                var change = pathChanges.FirstOrDefault(item => item.OldPath.Equals(rule.SourceRootPath, StringComparison.OrdinalIgnoreCase));
+                if (change.OldPath is null)
+                {
+                    return rule;
+                }
+
+                changed = true;
+                return rule with { SourceRootPath = change.NewPath };
+            })
+            .ToArray();
+
+        if (!changed)
+        {
+            return;
+        }
+
+        await SaveAutoDownloadAsync(
+            new SaveAutoDownloadConnectionRequest(
+                autoDownload.Enabled,
+                autoDownload.LocalImportPath,
+                autoDownload.OverwriteExisting,
+                autoDownload.AllowedExtensions,
+                autoDownload.LocalMediaPaths,
+                updatedRules),
             cancellationToken);
     }
 
