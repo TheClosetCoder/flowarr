@@ -36,6 +36,7 @@ const pages: PageDefinition[] = [
 
 export function App() {
   const [auth, setAuth] = React.useState<AuthStatus | null>(null);
+  const [authUnreachable, setAuthUnreachable] = React.useState(false);
   const initialRoute = getRouteFromHash();
   const [activePage, setActivePage] = React.useState(initialRoute.page);
   const [connectionTab, setConnectionTab] = React.useState(initialRoute.connectionTab);
@@ -65,8 +66,11 @@ export function App() {
 
   React.useEffect(() => {
     void fetchJson<AuthStatus>("/api/auth/status")
-      .then(setAuth)
-      .catch(() => setAuth({ setupComplete: false, authenticated: false }));
+      .then((status) => {
+        setAuth(status);
+        setAuthUnreachable(false);
+      })
+      .catch(() => setAuthUnreachable(true));
   }, []);
 
   React.useEffect(() => {
@@ -127,6 +131,23 @@ export function App() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  if (authUnreachable && !auth) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-bg px-4 text-center">
+        <div>
+          <p className="text-lg font-semibold text-ink">Can't reach the Flowarr server</p>
+          <p className="mt-2 text-sm text-muted">The backend didn't respond. Check that the container is running, then try again.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-medium text-bg"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!auth) {
     return <div className="grid min-h-screen place-items-center bg-bg text-sm text-muted">Loading Flowarr...</div>;
