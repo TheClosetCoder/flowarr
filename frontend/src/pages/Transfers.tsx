@@ -45,7 +45,7 @@ export function Transfers({
               <ActivityRow
                 key={item.id}
                 title={getDisplayTitle(item.remotePath, item.localPath)}
-                seasonLabel={extractSeasonLabel(item.remotePath, item.localPath)}
+                seasonLabel={extractSeasonLabel(item.currentFile ?? "", item.remotePath, item.localPath)}
                 status={item.status}
                 bytesTransferred={item.bytesTransferred}
                 totalBytes={item.totalBytes}

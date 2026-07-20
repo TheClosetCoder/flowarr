@@ -62,7 +62,7 @@ export function Dashboard({
               <ActivityRow
                 key={transfer.id}
                 title={getDisplayTitle(transfer.remotePath, transfer.localPath)}
-                seasonLabel={extractSeasonLabel(transfer.remotePath, transfer.localPath)}
+                seasonLabel={extractSeasonLabel(transfer.currentFile ?? "", transfer.remotePath, transfer.localPath)}
                 status={transfer.status}
                 bytesTransferred={transfer.bytesTransferred}
                 totalBytes={transfer.totalBytes}

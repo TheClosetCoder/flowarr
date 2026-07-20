@@ -18,6 +18,6 @@ public interface IRemoteFileTransferClient
     Task<bool> IsConfiguredAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<RemoteFileEntry>> ListAsync(string remotePath, CancellationToken cancellationToken = default);
     Task<long> GetSizeAsync(string remotePath, CancellationToken cancellationToken = default);
-    Task<RemoteTransferResult> DownloadAsync(string remotePath, string localRootPath, IProgress<long>? progress = null, CancellationToken cancellationToken = default);
+    Task<RemoteTransferResult> DownloadAsync(string remotePath, string localRootPath, IProgress<long>? progress = null, Action<string>? onFileStarted = null, CancellationToken cancellationToken = default);
     Task DeleteAsync(string remotePath, CancellationToken cancellationToken = default);
 }

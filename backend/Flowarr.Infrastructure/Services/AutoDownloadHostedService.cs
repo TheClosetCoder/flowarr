@@ -179,7 +179,16 @@ public sealed class AutoDownloadHostedService(
                 dbContext.SaveChanges();
             });
 
-            var result = await transferClient.DownloadAsync(transfer.RemotePath, transferRule.LocalPath, progress, linkedCts.Token);
+            // Fires once per file (far less often than the byte-progress callback above), so this
+            // is always saved immediately - it's what lets a whole-folder transfer (e.g. an entire
+            // TV show) show which season/episode is actively being written right now.
+            void OnFileStarted(string remotePath)
+            {
+                transfer.CurrentFile = remotePath;
+                dbContext.SaveChanges();
+            }
+
+            var result = await transferClient.DownloadAsync(transfer.RemotePath, transferRule.LocalPath, progress, OnFileStarted, linkedCts.Token);
             transfer.BytesTransferred = result.BytesTransferred;
             transfer.LocalPath = result.LocalPath;
             transfer.Status = result.Skipped ? TransferStatus.Skipped : TransferStatus.Completed;

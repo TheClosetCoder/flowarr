@@ -14,6 +14,10 @@ public sealed class RemoteTransfer
     public long TotalBytes { get; set; }
     public TransferStatus Status { get; set; } = TransferStatus.Queued;
     public string? Message { get; set; }
+    // The specific remote file currently being written to disk, for whole-folder transfers (e.g. an
+    // entire TV show) where the top-level RemotePath alone doesn't say which season/episode is
+    // actively downloading right now.
+    public string? CurrentFile { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }

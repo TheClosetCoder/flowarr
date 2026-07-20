@@ -353,6 +353,9 @@ namespace Flowarr.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CurrentFile")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("DownloadId")
                         .HasColumnType("TEXT");
 

@@ -21,7 +21,7 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
                 !string.IsNullOrWhiteSpace(seedbox.PrivateKeyPath));
     }
 
-    public async Task<RemoteTransferResult> DownloadAsync(string remotePath, string localRootPath, IProgress<long>? progress = null, CancellationToken cancellationToken = default)
+    public async Task<RemoteTransferResult> DownloadAsync(string remotePath, string localRootPath, IProgress<long>? progress = null, Action<string>? onFileStarted = null, CancellationToken cancellationToken = default)
     {
         _seedbox = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
         _autoDownload = await connectionSettingsService.GetAutoDownloadAsync(cancellationToken);
@@ -50,8 +50,8 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
             Directory.CreateDirectory(localRootPath);
             var attributes = client.GetAttributes(normalizedRemotePath);
             var bytes = attributes.IsDirectory
-                ? DownloadDirectory(client, normalizedRemotePath, localRootPath, true, progress, cancellationToken)
-                : DownloadFile(client, normalizedRemotePath, localRootPath, progress, cancellationToken);
+                ? DownloadDirectory(client, normalizedRemotePath, localRootPath, true, progress, onFileStarted, cancellationToken)
+                : DownloadFile(client, normalizedRemotePath, localRootPath, progress, onFileStarted, cancellationToken);
 
             client.Disconnect();
             return new RemoteTransferResult(normalizedRemotePath, localRootPath, bytes, bytes == 0, "SFTP download completed.");
@@ -190,7 +190,7 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
                                  remotePath.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase));
     }
 
-    private long DownloadDirectory(SftpClient client, string remotePath, string localRootPath, bool includeDirectoryName, IProgress<long>? progress, CancellationToken cancellationToken)
+    private long DownloadDirectory(SftpClient client, string remotePath, string localRootPath, bool includeDirectoryName, IProgress<long>? progress, Action<string>? onFileStarted, CancellationToken cancellationToken)
     {
         var total = 0L;
         var localDirectory = includeDirectoryName
@@ -207,14 +207,14 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
             }
 
             total += entry.IsDirectory
-                ? DownloadDirectory(client, entry.FullName, localDirectory, true, progress, cancellationToken)
-                : DownloadFile(client, entry.FullName, localDirectory, progress, cancellationToken);
+                ? DownloadDirectory(client, entry.FullName, localDirectory, true, progress, onFileStarted, cancellationToken)
+                : DownloadFile(client, entry.FullName, localDirectory, progress, onFileStarted, cancellationToken);
         }
 
         return total;
     }
 
-    private long DownloadFile(SftpClient client, string remotePath, string localDirectory, IProgress<long>? progress, CancellationToken cancellationToken)
+    private long DownloadFile(SftpClient client, string remotePath, string localDirectory, IProgress<long>? progress, Action<string>? onFileStarted, CancellationToken cancellationToken)
     {
         var extension = Path.GetExtension(remotePath);
         var autoDownload = _autoDownload ?? throw new InvalidOperationException("Auto-download settings were not loaded.");
@@ -241,6 +241,7 @@ public sealed class SftpSeedboxTransferClient(IConnectionSettingsService connect
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        onFileStarted?.Invoke(remotePath);
         using var output = File.Open(localPath, FileMode.Create, FileAccess.Write, FileShare.None);
         var previousBytes = 0UL;
         client.DownloadFile(remotePath, output, bytesDownloaded =>
