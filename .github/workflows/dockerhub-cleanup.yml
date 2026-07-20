@@ -8,7 +8,7 @@ on:
       keep:
         description: "Number of most recent sha tags to keep"
         required: false
-        default: "10"
+        default: "3"
       dry_run:
         description: "List tags that would be deleted without deleting them"
         type: boolean
@@ -25,7 +25,7 @@ jobs:
         env:
           DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          KEEP: ${{ github.event.inputs.keep || '10' }}
+          KEEP: ${{ github.event.inputs.keep || '3' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           set -euo pipefail
