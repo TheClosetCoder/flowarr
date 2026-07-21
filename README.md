@@ -3,7 +3,7 @@
 [![Publish Docker image](https://github.com/TheClosetCoder/flowarr/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/TheClosetCoder/flowarr/actions/workflows/docker-publish.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Docker Pulls](https://img.shields.io/docker/pulls/closetcoder/flowarr)](https://hub.docker.com/r/closetcoder/flowarr)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/flowarr)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/pEGw7aN53T)
 
 Flowarr is a self-hosted media operations dashboard for people running seedboxes, download clients, and the Arr ecosystem.
 
@@ -13,7 +13,7 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 
 - Website: [flowarr.org](https://www.flowarr.org/)
 - Docker Hub: [closetcoder/flowarr](https://hub.docker.com/r/closetcoder/flowarr)
-- Discord: [discord.gg/flowarr](https://discord.gg/flowarr)
+- Discord: [discord.gg/flowarr](https://discord.gg/pEGw7aN53T)
 - Reddit: [r/Flowarr](https://www.reddit.com/r/Flowarr/)
 
 ## What Flowarr Does
