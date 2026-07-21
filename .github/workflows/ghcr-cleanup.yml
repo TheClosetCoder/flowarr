@@ -57,20 +57,24 @@ jobs:
             page=$((page + 1))
           done
 
-          # A version is "prunable" if it carries no tags, or every tag it does carry is a bare
-          # short git sha (pure hex, no dots) - docker-publish.yml also tags every build with
-          # "latest" and/or semver, and any version carrying one of those is a real release/rolling
-          # tag that must never be auto-deleted.
+          # A version is prunable only if it carries at least one tag and every tag it has is a
+          # bare short git sha (pure hex, no dots). Untagged versions are deliberately left alone -
+          # multi-arch builds create several untagged child manifests per build (per-platform images,
+          # attestation/provenance), and the currently-live "latest"/semver tags' own child manifests
+          # would be sitting untagged in that same pool, so deleting untagged versions risks breaking
+          # a live tag on one platform. docker-publish.yml also tags every build with "latest" and/or
+          # semver, and any version carrying one of those is a real release/rolling tag that must
+          # never be auto-deleted.
           prunable=$(echo "$all" | jq -c '
             [.[] | select(
-              (.metadata.container.tags | length == 0) or
+              (.metadata.container.tags | length > 0) and
               (.metadata.container.tags | all(test("^[0-9a-f]{7,40}$")))
             )]
             | sort_by(.created_at) | reverse
           ')
 
           total=$(echo "$prunable" | jq 'length')
-          echo "Found $total prunable versions (untagged or sha-only) out of $(echo "$all" | jq 'length') total; keeping the $KEEP most recent."
+          echo "Found $total prunable versions (sha-only) out of $(echo "$all" | jq 'length') total; keeping the $KEEP most recent."
 
           to_delete=$(echo "$prunable" | jq -c --argjson keep "$KEEP" '.[$keep:]')
           delete_count=$(echo "$to_delete" | jq 'length')
