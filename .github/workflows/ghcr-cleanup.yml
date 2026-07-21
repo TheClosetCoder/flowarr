@@ -1,0 +1,93 @@
+name: Cleanup GHCR image versions
+
+# Requires a repo secret GHCR_CLEANUP_TOKEN: a classic PAT scoped to only
+# read:packages + delete:packages. The default GITHUB_TOKEN can't delete package
+# versions for a personal-account-owned package (GitHub API limitation), so a
+# dedicated least-privilege token is needed here instead of reusing GITHUB_TOKEN.
+
+on:
+  schedule:
+    - cron: "30 4 * * 0" # weekly, offset from the Docker Hub cleanup
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: "Number of most recent sha-only versions to keep"
+        required: false
+        default: "3"
+      dry_run:
+        description: "List versions that would be deleted without deleting them"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old sha-only image versions from GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: flowarr
+          KEEP: ${{ github.event.inputs.keep || '3' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "GHCR_CLEANUP_TOKEN secret is not set - add a classic PAT with read:packages + delete:packages scope." >&2
+            exit 1
+          fi
+
+          api() {
+            curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@"
+          }
+
+          # Walk every page of versions for this package.
+          page=1
+          all="[]"
+          while : ; do
+            batch=$(api "https://api.github.com/users/$OWNER/packages/container/$PACKAGE/versions?per_page=100&page=$page")
+            count=$(echo "$batch" | jq 'length')
+            [ "$count" -eq 0 ] && break
+            all=$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$batch"))
+            [ "$count" -lt 100 ] && break
+            page=$((page + 1))
+          done
+
+          # A version is "prunable" if it carries no tags, or every tag it does carry is a bare
+          # short git sha (pure hex, no dots) - docker-publish.yml also tags every build with
+          # "latest" and/or semver, and any version carrying one of those is a real release/rolling
+          # tag that must never be auto-deleted.
+          prunable=$(echo "$all" | jq -c '
+            [.[] | select(
+              (.metadata.container.tags | length == 0) or
+              (.metadata.container.tags | all(test("^[0-9a-f]{7,40}$")))
+            )]
+            | sort_by(.created_at) | reverse
+          ')
+
+          total=$(echo "$prunable" | jq 'length')
+          echo "Found $total prunable versions (untagged or sha-only) out of $(echo "$all" | jq 'length') total; keeping the $KEEP most recent."
+
+          to_delete=$(echo "$prunable" | jq -c --argjson keep "$KEEP" '.[$keep:]')
+          delete_count=$(echo "$to_delete" | jq 'length')
+
+          if [ "$delete_count" -eq 0 ]; then
+            echo "Nothing to delete."
+            exit 0
+          fi
+
+          echo "$to_delete" | jq -c '.[]' | while read -r version; do
+            id=$(echo "$version" | jq -r '.id')
+            tags=$(echo "$version" | jq -r '.metadata.container.tags | join(",")')
+            label="${tags:-<untagged>}"
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry-run] would delete version $id ($label)"
+            else
+              echo "Deleting version $id ($label)"
+              api -o /dev/null -w "  -> HTTP %{http_code}\n" -X DELETE "https://api.github.com/users/$OWNER/packages/container/$PACKAGE/versions/$id"
+            fi
+          done
