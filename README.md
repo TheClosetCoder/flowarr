@@ -15,6 +15,7 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 - Docker Hub: [closetcoder/flowarr](https://hub.docker.com/r/closetcoder/flowarr)
 - Discord: [discord.gg/flowarr](https://discord.gg/pEGw7aN53T)
 - Reddit: [r/Flowarr](https://www.reddit.com/r/Flowarr/)
+- Roadmap: [ROADMAP.md](ROADMAP.md) · [live board](https://github.com/users/TheClosetCoder/projects/1) (suggest and vote on ideas here)
 
 ## What Flowarr Does
 
