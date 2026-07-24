@@ -43,8 +43,9 @@ it is a painful thing to have to turn down.
 Prerequisites: **.NET 8 SDK** and **Node 22** (what the Docker build uses; Node 20+
 should work fine).
 
-Run the API — it listens on port 8080 in development, the same port the container
-publishes, so dev URLs match the ones in the README:
+Run the API — it listens on port 5084 in development, deliberately not the 8080 it
+publishes in the container, so you can run a Flowarr container on 8080 at the same
+time:
 
 ```bash
 dotnet run --project backend/Flowarr.Api

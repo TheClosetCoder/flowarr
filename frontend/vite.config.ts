@@ -22,9 +22,11 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    // The API runs on 5084 in development, not the 8080 it publishes in the container, so a
+    // dev container can run on 8080 at the same time without the two fighting over the port.
     proxy: {
-      "/api": "http://localhost:8080",
-      "/health": "http://localhost:8080"
+      "/api": "http://localhost:5084",
+      "/health": "http://localhost:5084"
     }
   }
 });
