@@ -22,6 +22,7 @@ More views in [Screenshots](#screenshots).
 - Discord: [discord.gg/flowarr](https://discord.gg/pEGw7aN53T)
 - Reddit: [r/Flowarr](https://www.reddit.com/r/Flowarr/)
 - Roadmap: [ROADMAP.md](ROADMAP.md) · [live board](https://github.com/users/TheClosetCoder/projects/1) (suggest and vote on ideas here)
+- Contributing: [CONTRIBUTING.md](.github/CONTRIBUTING.md) · Security: [SECURITY.md](.github/SECURITY.md)
 
 ## What Flowarr Does
 
