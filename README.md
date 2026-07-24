@@ -9,6 +9,12 @@ Flowarr is a self-hosted media operations dashboard for people running seedboxes
 
 It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show storage usage, download state, media lifecycle state, and cleanup recommendations in one place.
 
+Flowarr is built with heavy AI assistance — see [How Flowarr Is Built](#how-flowarr-is-built) for exactly what that means before you decide whether to run it.
+
+[![Flowarr dashboard](docs/screenshots/dashboard.png)](docs/screenshots/dashboard.png)
+
+More views in [Screenshots](#screenshots).
+
 ## Community
 
 - Website: [flowarr.org](https://www.flowarr.org/)
@@ -40,6 +46,35 @@ It sits above tools like qBittorrent, Radarr, Sonarr, Plex, and Jellyfin to show
 - It does not automatically delete files.
 - It does not make uncertain matches silently safe.
 - It does not integrate with Jellyfin yet.
+
+## Screenshots
+
+Click any shot to view it full size. The dashboard is at the top of this page — local and seedbox usage, active SFTP transfers with live progress and cancel, recent imports, and torrent-client state side by side.
+
+**Storage** — local and seedbox roots split by whether each folder backs a download rule or is only monitored for free space.
+
+[![Flowarr storage page](docs/screenshots/storage.png)](docs/screenshots/storage.png)
+
+**Cleanup** — Plex-derived duplicate and stale candidates, with the kept copy chosen explicitly, confidence shown, and dry-run on by default.
+
+[![Flowarr cleanup page](docs/screenshots/cleanup.png)](docs/screenshots/cleanup.png)
+
+**Settings** — per-integration configuration for the torrent client, SFTP, Radarr/Sonarr, and Plex, with a "Test connection" button and secrets stored encrypted.
+
+[![Flowarr settings page](docs/screenshots/connections.png)](docs/screenshots/connections.png)
+
+## How Flowarr Is Built
+
+Flowarr is developed with extensive use of Claude (Anthropic's AI coding tooling). Stating that plainly here so nobody has to guess:
+
+- **Most of the code is written by Claude**, from my specifications and design decisions. The direction, feature scope, priorities, and what "correct" means for this project are mine.
+- **Code review is also done with Claude.** It is the primary review layer — I read through the code myself only in specific cases, such as security-sensitive paths or when something behaves in a way I don't expect.
+- **Every feature is tested by me in my own running setup** before it ships: a real seedbox over SFTP, a real download client, Radarr/Sonarr, and a real Plex library. Nothing gets released on the strength of "the code looks right" alone — if it doesn't work against my own stack, it doesn't go out.
+- **Destructive operations are deliberately conservative** for exactly this reason. Cleanup never deletes automatically, dry-run is the default, real deletion needs an explicit config flag plus exact path confirmation, and every action is written to the audit log. See [Cleanup Rules](#cleanup-rules).
+
+What this means for you: judge Flowarr the way you'd judge any self-hosted hobby project — on whether it works in your setup, not on who typed it. Run it against data you have backed up, keep dry-run on until you've verified your roots and paths, and open an issue if something is wrong. Bug reports are welcome and get fixed.
+
+If AI-assisted development is a dealbreaker for you, that's a completely reasonable position — better you know now than three commits into a fork.
 
 ## Quick Start
 
