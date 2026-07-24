@@ -43,11 +43,11 @@ it is a painful thing to have to turn down.
 Prerequisites: **.NET 8 SDK** and **Node 22** (what the Docker build uses; Node 20+
 should work fine).
 
-Run the API — pass `--urls` explicitly, because the frontend dev server proxies to
-port 8080 while the default launch profile uses 5084:
+Run the API — it listens on port 8080 in development, the same port the container
+publishes, so dev URLs match the ones in the README:
 
 ```bash
-dotnet run --project backend/Flowarr.Api --urls http://localhost:8080
+dotnet run --project backend/Flowarr.Api
 ```
 
 In a second terminal, run the frontend dev server (Vite on port 5173, proxying

@@ -1,0 +1,4 @@
+# The Docker build copies the built frontend (frontend/dist) into this folder, so it's
+# empty in a source checkout. It still has to exist: in Development, ASP.NET Core reads
+# the static web assets manifest, which lists wwwroot as a content root, and throws
+# DirectoryNotFoundException at startup if it's missing.
