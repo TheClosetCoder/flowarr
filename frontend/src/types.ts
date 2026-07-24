@@ -74,6 +74,7 @@ export type ConnectionSettings = {
   radarr: ArrSettings;
   sonarr: ArrSettings;
   plex: ArrSettings;
+  jellyfin: ArrSettings;
 };
 
 export type RawConnectionSettings = Partial<ConnectionSettings> & {

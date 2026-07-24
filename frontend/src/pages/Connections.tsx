@@ -86,12 +86,14 @@ function ConnectionForms({
   const [radarr, setRadarr] = React.useState({ ...settings.radarr, apiKey: "", clearApiKey: false });
   const [sonarr, setSonarr] = React.useState({ ...settings.sonarr, apiKey: "", clearApiKey: false });
   const [plex, setPlex] = React.useState({ ...settings.plex, apiKey: "", clearApiKey: false });
+  const [jellyfin, setJellyfin] = React.useState({ ...settings.jellyfin, apiKey: "", clearApiKey: false });
   const [message, setMessage] = React.useState("");
   const [torrentTest, setTorrentTest] = React.useState<ConnectionTestResult | null>(null);
   const [sftpTest, setSftpTest] = React.useState<ConnectionTestResult | null>(null);
   const [radarrTest, setRadarrTest] = React.useState<ConnectionTestResult | null>(null);
   const [sonarrTest, setSonarrTest] = React.useState<ConnectionTestResult | null>(null);
   const [plexTest, setPlexTest] = React.useState<ConnectionTestResult | null>(null);
+  const [jellyfinTest, setJellyfinTest] = React.useState<ConnectionTestResult | null>(null);
   const [testingTorrent, setTestingTorrent] = React.useState(false);
   const [testingSftp, setTestingSftp] = React.useState(false);
   const enabledSeedboxRoots = sftpSeedbox.seedboxRoots.filter((root) => root.enabled && root.path.trim());
@@ -104,11 +106,13 @@ function ConnectionForms({
     setRadarr({ ...settings.radarr, apiKey: "", clearApiKey: false });
     setSonarr({ ...settings.sonarr, apiKey: "", clearApiKey: false });
     setPlex({ ...settings.plex, apiKey: "", clearApiKey: false });
+    setJellyfin({ ...settings.jellyfin, apiKey: "", clearApiKey: false });
     setTorrentTest(null);
     setSftpTest(null);
     setRadarrTest(null);
     setSonarrTest(null);
     setPlexTest(null);
+    setJellyfinTest(null);
   }, [settings]);
 
   async function saveTorrentClient() {
@@ -220,8 +224,8 @@ function ConnectionForms({
     }
   }
 
-  async function saveArr(system: "radarr" | "sonarr" | "plex") {
-    const state = system === "radarr" ? radarr : system === "sonarr" ? sonarr : plex;
+  async function saveArr(system: "radarr" | "sonarr" | "plex" | "jellyfin") {
+    const state = system === "radarr" ? radarr : system === "sonarr" ? sonarr : system === "plex" ? plex : jellyfin;
     setMessage(`Saving ${system}...`);
     try {
       await putJson(`/api/connections/${system}`, state);
@@ -232,9 +236,9 @@ function ConnectionForms({
     }
   }
 
-  async function testArr(system: "radarr" | "sonarr" | "plex") {
-    const state = system === "radarr" ? radarr : system === "sonarr" ? sonarr : plex;
-    const setter = system === "radarr" ? setRadarrTest : system === "sonarr" ? setSonarrTest : setPlexTest;
+  async function testArr(system: "radarr" | "sonarr" | "plex" | "jellyfin") {
+    const state = system === "radarr" ? radarr : system === "sonarr" ? sonarr : system === "plex" ? plex : jellyfin;
+    const setter = system === "radarr" ? setRadarrTest : system === "sonarr" ? setSonarrTest : system === "plex" ? setPlexTest : setJellyfinTest;
     setter({ ok: true, message: `Testing ${system}...` });
     const result = await postJson<ConnectionTestResult>(`/api/connections/${system}/test`, state);
     setter(result);
@@ -526,7 +530,9 @@ function ConnectionForms({
       {activeTab === "plex" && (
         <ArrConnectionCard title="Plex" value={plex} test={plexTest} onChange={setPlex} onSave={() => saveArr("plex")} onTest={() => testArr("plex")} apiKeyLabel="Plex token" />
       )}
-      {activeTab === "jellyfin" && <PlannedServicePanel name="Jellyfin" />}
+      {activeTab === "jellyfin" && (
+        <ArrConnectionCard title="Jellyfin" value={jellyfin} test={jellyfinTest} onChange={setJellyfin} onSave={() => saveArr("jellyfin")} onTest={() => testArr("jellyfin")} apiKeyLabel="API key" />
+      )}
 
       <div className="flex items-center gap-3">
         <p className="text-sm text-muted">{message}</p>
@@ -632,18 +638,6 @@ function ConnectionTabs({ activeTab, tabs, onChange }: { activeTab: string; tabs
         ))}
       </div>
     </div>
-  );
-}
-
-function PlannedServicePanel({ name }: { name: string }) {
-  return (
-    <Card>
-      <SectionHeader
-        title={name}
-        description={`${name} integration is planned. Flowarr will use it later for library awareness and playback-server status.`}
-      />
-      <p className="mt-3 text-sm text-muted">Not configured yet.</p>
-    </Card>
   );
 }
 

@@ -11,7 +11,8 @@ public sealed class ConnectionsController(
     IConnectionSettingsService connectionSettingsService,
     IConnectionTestService connectionTestService,
     ArrMediaCatalogClient arrMediaCatalogClient,
-    PlexClient plexClient) : ControllerBase
+    PlexClient plexClient,
+    JellyfinClient jellyfinClient) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -32,7 +33,7 @@ public sealed class ConnectionsController(
             radarr = new { configured = value.Radarr.Enabled && HasValue(value.Radarr.BaseUrl) && value.Radarr.HasApiKey, status = "configured" },
             sonarr = new { configured = value.Sonarr.Enabled && HasValue(value.Sonarr.BaseUrl) && value.Sonarr.HasApiKey, status = "configured" },
             plex = new { configured = value.Plex.Enabled && HasValue(value.Plex.BaseUrl) && value.Plex.HasApiKey, status = value.Plex.Enabled && HasValue(value.Plex.BaseUrl) && value.Plex.HasApiKey ? "configured" : "not_configured" },
-            jellyfin = new { configured = false, status = "not_configured" }
+            jellyfin = new { configured = value.Jellyfin.Enabled && HasValue(value.Jellyfin.BaseUrl) && value.Jellyfin.HasApiKey, status = value.Jellyfin.Enabled && HasValue(value.Jellyfin.BaseUrl) && value.Jellyfin.HasApiKey ? "configured" : "not_configured" }
         });
     }
 
@@ -60,7 +61,8 @@ public sealed class ConnectionsController(
             settings.AutoDownload,
             new ArrConnectionResponse(settings.Radarr.Enabled, settings.Radarr.BaseUrl, settings.Radarr.HasApiKey),
             new ArrConnectionResponse(settings.Sonarr.Enabled, settings.Sonarr.BaseUrl, settings.Sonarr.HasApiKey),
-            new ArrConnectionResponse(settings.Plex.Enabled, settings.Plex.BaseUrl, settings.Plex.HasApiKey));
+            new ArrConnectionResponse(settings.Plex.Enabled, settings.Plex.BaseUrl, settings.Plex.HasApiKey),
+            new ArrConnectionResponse(settings.Jellyfin.Enabled, settings.Jellyfin.BaseUrl, settings.Jellyfin.HasApiKey));
     }
 
     [HttpPut("qbittorrent")]
@@ -135,6 +137,19 @@ public sealed class ConnectionsController(
         return plexClient.TestAsync(request, cancellationToken);
     }
 
+    [HttpPut("jellyfin")]
+    public async Task<IActionResult> SaveJellyfin(SaveArrConnectionRequest request, CancellationToken cancellationToken)
+    {
+        await connectionSettingsService.SaveJellyfinAsync(request, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("jellyfin/test")]
+    public Task<ConnectionTestResult> TestJellyfin(SaveArrConnectionRequest request, CancellationToken cancellationToken)
+    {
+        return jellyfinClient.TestAsync(request, cancellationToken);
+    }
+
     [HttpGet("{system:regex(^radarr|sonarr$)}/root-folders")]
     public async Task<IActionResult> GetArrRootFolders(string system, CancellationToken cancellationToken)
     {
@@ -157,7 +172,9 @@ public sealed record ConnectionSettingsResponse(
     [property: JsonPropertyName("sonarr")]
     ArrConnectionResponse Sonarr,
     [property: JsonPropertyName("plex")]
-    ArrConnectionResponse Plex);
+    ArrConnectionResponse Plex,
+    [property: JsonPropertyName("jellyfin")]
+    ArrConnectionResponse Jellyfin);
 
 public sealed record QBittorrentConnectionResponse(
     bool Enabled,

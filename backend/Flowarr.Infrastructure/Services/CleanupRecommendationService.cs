@@ -14,21 +14,36 @@ public sealed class CleanupRecommendationService(
     FlowarrDbContext dbContext,
     IConnectionSettingsService connectionSettingsService,
     PlexClient plexClient,
+    JellyfinClient jellyfinClient,
     IOptions<IntegrationOptions> options) : ICleanupRecommendationService
 {
     public async Task<IReadOnlyCollection<CleanupCandidate>> GenerateCandidatesAsync(Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
         var plexSettings = await connectionSettingsService.GetPlexAsync(cancellationToken);
-        if (!plexSettings.Enabled || string.IsNullOrWhiteSpace(plexSettings.BaseUrl) || !plexSettings.HasApiKey)
+        var jellyfinSettings = await connectionSettingsService.GetJellyfinAsync(cancellationToken);
+        var plexConfigured = plexSettings.Enabled && !string.IsNullOrWhiteSpace(plexSettings.BaseUrl) && plexSettings.HasApiKey;
+        var jellyfinConfigured = jellyfinSettings.Enabled && !string.IsNullOrWhiteSpace(jellyfinSettings.BaseUrl) && jellyfinSettings.HasApiKey;
+        if (!plexConfigured && !jellyfinConfigured)
         {
-            throw new InvalidOperationException("Plex must be configured before generating cleanup recommendations.");
+            throw new InvalidOperationException("A media server (Plex or Jellyfin) must be configured before generating cleanup recommendations.");
         }
 
         var cleanupSettings = await connectionSettingsService.GetCleanupSettingsAsync(cancellationToken);
         var staleAfter = TimeSpan.FromDays(cleanupSettings.StaleAfterDays);
         var now = DateTimeOffset.UtcNow;
 
-        var libraryItems = await plexClient.GetLibraryItemsAsync(onProgress, cancellationToken);
+        var serverItems = new List<MediaLibraryItem>();
+        if (plexConfigured)
+        {
+            serverItems.AddRange(await plexClient.GetLibraryItemsAsync(onProgress, cancellationToken));
+        }
+
+        if (jellyfinConfigured)
+        {
+            serverItems.AddRange(await jellyfinClient.GetLibraryItemsAsync(onProgress, cancellationToken));
+        }
+
+        var libraryItems = MergeAcrossServers(serverItems);
         if (onProgress is not null)
         {
             await onProgress($"Evaluating {libraryItems.Count} file(s) for staleness and duplicates...");
@@ -66,13 +81,14 @@ public sealed class CleanupRecommendationService(
 
         var newCandidates = new List<CleanupCandidate>();
         var touchedPaths = new HashSet<string>(StringComparer.Ordinal);
-        var byRatingKey = libraryItems.GroupBy(item => item.RatingKey).ToList();
+        var byItemKey = libraryItems.GroupBy(item => item.ItemKey).ToList();
 
-        foreach (var group in byRatingKey)
+        foreach (var group in byItemKey)
         {
-            // Plex represents multiple physical copies of the same title as multiple Media
-            // entries under one item - keep the largest (best-quality proxy), flag the rest.
-            // Files already deleted are excluded before picking "kept" - Plex may not have
+            // Both servers represent multiple physical copies of the same title as multiple
+            // media entries under one item (Plex's Media list, Jellyfin's MediaSources) - keep
+            // the largest (best-quality proxy), flag the rest.
+            // Files already deleted are excluded before picking "kept" - the server may not have
             // refreshed yet and can still report a deleted file as a version, and when two
             // versions tie on size, which one sorts first isn't guaranteed to stay consistent
             // between scans. Without this, a deleted-but-still-reported file could keep winning
@@ -99,7 +115,7 @@ public sealed class CleanupRecommendationService(
                 TryAddCandidate(newCandidates, existingByPath, touchedPaths, duplicate,
                     $"Duplicate version of \"{duplicate.Title}\" - this copy is {FormatGb(duplicate.FileSizeBytes)} vs the {FormatGb(kept.FileSizeBytes)} copy being kept.",
                     CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
-                    CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath, isSuggestedKeep: false);
+                    CleanupReasonType.Duplicate, group.Key, kept.FilePath, isSuggestedKeep: false);
             }
 
             CleanupCandidate? leftoverFlag = null;
@@ -112,7 +128,7 @@ public sealed class CleanupRecommendationService(
                 TryAddCandidate(newCandidates, existingByPath, touchedPaths, kept,
                     $"Largest copy of \"{kept.Title}\" ({FormatGb(kept.FileSizeBytes)}) - suggested to keep over {otherCount} other cop{(otherCount == 1 ? "y" : "ies")}.",
                     CleanupMatchConfidence.Certain, options.Value.Cleanup.DryRun,
-                    CleanupReasonType.Duplicate, $"ratingkey:{group.Key}", kept.FilePath, isSuggestedKeep: true);
+                    CleanupReasonType.Duplicate, group.Key, kept.FilePath, isSuggestedKeep: true);
             }
             else if (existingByPath.TryGetValue(kept.FilePath, out var existingKept)
                 && existingKept.Status == CleanupStatus.PendingReview
@@ -140,9 +156,10 @@ public sealed class CleanupRecommendationService(
             }
         }
 
-        // Secondary, lower-confidence tier: same normalized title under separate Plex entries
-        // that Plex itself did not merge into one item (so no shared Media-group signal above).
-        var keptItems = byRatingKey.Select(group => group.OrderByDescending(item => item.FileSizeBytes).First()).ToList();
+        // Secondary, lower-confidence tier: same normalized title under separate library entries
+        // that the server itself did not merge into one item (so no shared version-group signal
+        // above).
+        var keptItems = byItemKey.Select(group => group.OrderByDescending(item => item.FileSizeBytes).First()).ToList();
         var possibleDuplicateTitles = keptItems
             .GroupBy(item => NormalizeTitle(item.Title))
             .Where(group => group.Count() > 1);
@@ -162,7 +179,7 @@ public sealed class CleanupRecommendationService(
                 // sibling is approved/rejected it drops out of that view, and without this the
                 // remaining one gives no clue what it was ever flagged against.
                 var otherPaths = groupItems.Where(other => other.FilePath != item.FilePath).Select(other => other.FilePath).ToList();
-                var reason = $"Possible duplicate title: \"{item.Title}\" also appears under a separate Plex entry at {string.Join(", ", otherPaths)}. Review manually.";
+                var reason = $"Possible duplicate title: \"{item.Title}\" also appears under a separate library entry at {string.Join(", ", otherPaths)}. Review manually.";
 
                 TryAddCandidate(newCandidates, existingByPath, touchedPaths, item,
                     reason,
@@ -181,7 +198,54 @@ public sealed class CleanupRecommendationService(
         return newCandidates;
     }
 
-    private static string? GetStaleReason(PlexLibraryItem item, DateTimeOffset now, TimeSpan staleAfter)
+    /// <summary>
+    /// When Plex and Jellyfin both index the same library, every file shows up twice - once per
+    /// server, under different item keys. Without merging, each title would be flagged as its own
+    /// "possible duplicate" of itself, and watch state would depend on which server happened to be
+    /// listed first. Collapse to one entry per file path (first server wins the grouping, so Plex's
+    /// version-groups are preferred when both exist) and fold the watch data together: watched
+    /// anywhere counts as watched, the most recent view wins, and the earliest added date stands.
+    /// </summary>
+    private static IReadOnlyCollection<MediaLibraryItem> MergeAcrossServers(IReadOnlyCollection<MediaLibraryItem> items)
+    {
+        var byPath = new Dictionary<string, MediaLibraryItem>(StringComparer.Ordinal);
+        var order = new List<string>();
+
+        foreach (var item in items)
+        {
+            if (!byPath.TryGetValue(item.FilePath, out var existing))
+            {
+                byPath[item.FilePath] = item;
+                order.Add(item.FilePath);
+                continue;
+            }
+
+            byPath[item.FilePath] = existing with
+            {
+                ViewCount = Math.Max(existing.ViewCount, item.ViewCount),
+                LastViewedAt = MaxDate(existing.LastViewedAt, item.LastViewedAt),
+                AddedAt = MinDate(existing.AddedAt, item.AddedAt)
+            };
+        }
+
+        return order.Select(path => byPath[path]).ToList();
+    }
+
+    private static DateTimeOffset? MaxDate(DateTimeOffset? left, DateTimeOffset? right)
+    {
+        if (left is null) return right;
+        if (right is null) return left;
+        return left > right ? left : right;
+    }
+
+    private static DateTimeOffset? MinDate(DateTimeOffset? left, DateTimeOffset? right)
+    {
+        if (left is null) return right;
+        if (right is null) return left;
+        return left < right ? left : right;
+    }
+
+    private static string? GetStaleReason(MediaLibraryItem item, DateTimeOffset now, TimeSpan staleAfter)
     {
         if (item.ViewCount == 0 && item.AddedAt is { } addedAt && now - addedAt > staleAfter)
         {
@@ -200,7 +264,7 @@ public sealed class CleanupRecommendationService(
         List<CleanupCandidate> newCandidates,
         Dictionary<string, CleanupCandidate> existingByPath,
         HashSet<string> touchedPaths,
-        PlexLibraryItem item,
+        MediaLibraryItem item,
         string reason,
         CleanupMatchConfidence confidence,
         bool dryRun,
@@ -209,8 +273,9 @@ public sealed class CleanupRecommendationService(
         string? keptPath,
         bool isSuggestedKeep = false)
     {
-        // Plex's reported path only resolves to a real file if Plex and Flowarr share the same
-        // mount layout - skip rather than present a candidate we can't actually verify or act on.
+        // The server's reported path only resolves to a real file if the media server and Flowarr
+        // share the same mount layout - skip rather than present a candidate we can't actually
+        // verify or act on.
         if (!File.Exists(item.FilePath))
         {
             return;

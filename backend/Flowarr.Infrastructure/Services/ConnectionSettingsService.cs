@@ -17,6 +17,7 @@ public interface IConnectionSettingsService
     Task<ArrConnectionSettings> GetRadarrAsync(CancellationToken cancellationToken = default);
     Task<ArrConnectionSettings> GetSonarrAsync(CancellationToken cancellationToken = default);
     Task<ArrConnectionSettings> GetPlexAsync(CancellationToken cancellationToken = default);
+    Task<ArrConnectionSettings> GetJellyfinAsync(CancellationToken cancellationToken = default);
     Task<CleanupSettings> GetCleanupSettingsAsync(CancellationToken cancellationToken = default);
     Task SaveQBittorrentAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken = default);
     Task SaveSftpSeedboxAsync(SaveSftpSeedboxConnectionRequest request, CancellationToken cancellationToken = default);
@@ -24,6 +25,7 @@ public interface IConnectionSettingsService
     Task SaveRadarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default);
     Task SaveSonarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default);
     Task SavePlexAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default);
+    Task SaveJellyfinAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default);
     Task SaveCleanupSettingsAsync(SaveCleanupSettingsRequest request, CancellationToken cancellationToken = default);
 }
 
@@ -43,7 +45,8 @@ public sealed class ConnectionSettingsService(
         var radarr = await GetRadarrAsync(cancellationToken);
         var sonarr = await GetSonarrAsync(cancellationToken);
         var plex = await GetPlexAsync(cancellationToken);
-        return new ConnectionSettingsSnapshot(qbittorrent, sftpSeedbox, autoDownload, radarr, sonarr, plex);
+        var jellyfin = await GetJellyfinAsync(cancellationToken);
+        return new ConnectionSettingsSnapshot(qbittorrent, sftpSeedbox, autoDownload, radarr, sonarr, plex, jellyfin);
     }
 
     public async Task<QBittorrentConnectionSettings> GetQBittorrentAsync(CancellationToken cancellationToken = default)
@@ -104,6 +107,11 @@ public sealed class ConnectionSettingsService(
     public Task<ArrConnectionSettings> GetPlexAsync(CancellationToken cancellationToken = default)
     {
         return GetArrAsync("plex", "Plex", string.Empty, string.Empty, cancellationToken);
+    }
+
+    public Task<ArrConnectionSettings> GetJellyfinAsync(CancellationToken cancellationToken = default)
+    {
+        return GetArrAsync("jellyfin", "Jellyfin", string.Empty, string.Empty, cancellationToken);
     }
 
     public async Task<CleanupSettings> GetCleanupSettingsAsync(CancellationToken cancellationToken = default)
@@ -274,6 +282,11 @@ public sealed class ConnectionSettingsService(
     public Task SavePlexAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
     {
         return SaveArrAsync("plex", "Plex", request, cancellationToken);
+    }
+
+    public Task SaveJellyfinAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
+    {
+        return SaveArrAsync("jellyfin", "Jellyfin", request, cancellationToken);
     }
 
     public Task SaveCleanupSettingsAsync(SaveCleanupSettingsRequest request, CancellationToken cancellationToken = default)
@@ -466,7 +479,8 @@ public sealed record ConnectionSettingsSnapshot(
     AutoDownloadConnectionSettings AutoDownload,
     ArrConnectionSettings Radarr,
     ArrConnectionSettings Sonarr,
-    ArrConnectionSettings Plex);
+    ArrConnectionSettings Plex,
+    ArrConnectionSettings Jellyfin);
 
 public sealed record QBittorrentConnectionSettings(
     bool Enabled,

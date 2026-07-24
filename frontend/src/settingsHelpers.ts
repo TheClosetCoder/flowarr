@@ -35,7 +35,8 @@ export function defaultConnectionSettings(): ConnectionSettings {
     autoDownload: normalizeAutoDownload(undefined),
     radarr: { enabled: false, baseUrl: "", hasApiKey: false },
     sonarr: { enabled: false, baseUrl: "", hasApiKey: false },
-    plex: { enabled: false, baseUrl: "", hasApiKey: false }
+    plex: { enabled: false, baseUrl: "", hasApiKey: false },
+    jellyfin: { enabled: false, baseUrl: "", hasApiKey: false }
   };
 }
 
@@ -47,6 +48,7 @@ export function normalizeConnectionSettings(settings: RawConnectionSettings): Co
     autoDownload: normalizeAutoDownload(settings.autoDownload),
     radarr: settings.radarr ?? defaults.radarr,
     sonarr: settings.sonarr ?? defaults.sonarr,
-    plex: settings.plex ?? defaults.plex
+    plex: settings.plex ?? defaults.plex,
+    jellyfin: settings.jellyfin ?? defaults.jellyfin
   };
 }
