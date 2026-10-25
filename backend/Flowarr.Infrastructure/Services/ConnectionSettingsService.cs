@@ -131,6 +131,15 @@ public sealed class ConnectionSettingsService(
 
     public async Task SaveQBittorrentAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken = default)
     {
+        var current = await GetQBittorrentAsync(cancellationToken);
+        SecretReusePolicy.EnsureSavedSecretStaysWithTarget(
+            request.Password,
+            request.ClearPassword,
+            current.HasPassword,
+            SecretReusePolicy.IsUrlChange(request.BaseUrl, current.BaseUrl),
+            "torrent client password",
+            "base URL");
+
         var existing = await GetConnectionAsync("qbittorrent", cancellationToken);
         var secrets = ReadSecrets(existing);
         if (!string.IsNullOrWhiteSpace(request.Password))
@@ -158,6 +167,17 @@ public sealed class ConnectionSettingsService(
 
     public async Task SaveSftpSeedboxAsync(SaveSftpSeedboxConnectionRequest request, CancellationToken cancellationToken = default)
     {
+        // Only the password is guarded: the key passphrase never leaves this machine, and key-based
+        // auth proves possession of the key to the server without disclosing it.
+        var current = await GetSftpSeedboxAsync(cancellationToken);
+        SecretReusePolicy.EnsureSavedSecretStaysWithTarget(
+            request.Password,
+            request.ClearPassword,
+            current.HasPassword,
+            SecretReusePolicy.IsHostChange(request.Host, request.Port, current.Host, current.Port),
+            "SFTP password",
+            "host or port");
+
         var existing = await GetConnectionAsync("sftpSeedbox", cancellationToken);
         var previousRoots = GetSeedboxRoots(ReadSettings(existing));
         var secrets = ReadSecrets(existing);
@@ -274,19 +294,19 @@ public sealed class ConnectionSettingsService(
             cancellationToken);
     }
 
-    public Task SaveRadarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
+    public async Task SaveRadarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        return SaveArrAsync("radarr", "Radarr", request, cancellationToken);
+        await SaveArrAsync("radarr", "Radarr", await GetRadarrAsync(cancellationToken), request, cancellationToken);
     }
 
-    public Task SavePlexAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
+    public async Task SavePlexAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        return SaveArrAsync("plex", "Plex", request, cancellationToken);
+        await SaveArrAsync("plex", "Plex", await GetPlexAsync(cancellationToken), request, cancellationToken, "Plex token");
     }
 
-    public Task SaveJellyfinAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
+    public async Task SaveJellyfinAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        return SaveArrAsync("jellyfin", "Jellyfin", request, cancellationToken);
+        await SaveArrAsync("jellyfin", "Jellyfin", await GetJellyfinAsync(cancellationToken), request, cancellationToken);
     }
 
     public Task SaveCleanupSettingsAsync(SaveCleanupSettingsRequest request, CancellationToken cancellationToken = default)
@@ -305,9 +325,9 @@ public sealed class ConnectionSettingsService(
             cancellationToken);
     }
 
-    public Task SaveSonarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
+    public async Task SaveSonarrAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        return SaveArrAsync("sonarr", "Sonarr", request, cancellationToken);
+        await SaveArrAsync("sonarr", "Sonarr", await GetSonarrAsync(cancellationToken), request, cancellationToken);
     }
 
     private async Task<ArrConnectionSettings> GetArrAsync(
@@ -330,8 +350,16 @@ public sealed class ConnectionSettingsService(
             apiKey);
     }
 
-    private async Task SaveArrAsync(string key, string displayName, SaveArrConnectionRequest request, CancellationToken cancellationToken)
+    private async Task SaveArrAsync(string key, string displayName, ArrConnectionSettings current, SaveArrConnectionRequest request, CancellationToken cancellationToken, string? secretLabel = null)
     {
+        SecretReusePolicy.EnsureSavedSecretStaysWithTarget(
+            request.ApiKey,
+            request.ClearApiKey,
+            current.HasApiKey,
+            SecretReusePolicy.IsUrlChange(request.BaseUrl, current.BaseUrl),
+            secretLabel ?? $"{displayName} API key",
+            "base URL");
+
         var existing = await GetConnectionAsync(key, cancellationToken);
         var secrets = ReadSecrets(existing);
         if (!string.IsNullOrWhiteSpace(request.ApiKey))

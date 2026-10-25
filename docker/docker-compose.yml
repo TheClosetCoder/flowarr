@@ -5,6 +5,8 @@ services:
       context: ..
       dockerfile: backend/Flowarr.Api/Dockerfile
     environment:
+      PUID: ${FLOWARR_PUID:-1000}
+      PGID: ${FLOWARR_PGID:-1000}
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Flowarr: Data Source=/var/lib/flowarr/data/flowarr.db
       Flowarr__QBittorrent__BaseUrl: ${FLOWARR_QBITTORRENT_BASE_URL:-}

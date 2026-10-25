@@ -68,8 +68,7 @@ public sealed class ConnectionsController(
     [HttpPut("qbittorrent")]
     public async Task<IActionResult> SaveQBittorrent(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken)
     {
-        await connectionSettingsService.SaveQBittorrentAsync(request, cancellationToken);
-        return NoContent();
+        return await SaveAsync(() => connectionSettingsService.SaveQBittorrentAsync(request, cancellationToken));
     }
 
     [HttpPost("qbittorrent/test")]
@@ -81,8 +80,7 @@ public sealed class ConnectionsController(
     [HttpPut("sftp-seedbox")]
     public async Task<IActionResult> SaveSftpSeedbox(SaveSftpSeedboxConnectionRequest request, CancellationToken cancellationToken)
     {
-        await connectionSettingsService.SaveSftpSeedboxAsync(request, cancellationToken);
-        return NoContent();
+        return await SaveAsync(() => connectionSettingsService.SaveSftpSeedboxAsync(request, cancellationToken));
     }
 
     [HttpPost("sftp-seedbox/test")]
@@ -101,15 +99,13 @@ public sealed class ConnectionsController(
     [HttpPut("radarr")]
     public async Task<IActionResult> SaveRadarr(SaveArrConnectionRequest request, CancellationToken cancellationToken)
     {
-        await connectionSettingsService.SaveRadarrAsync(request, cancellationToken);
-        return NoContent();
+        return await SaveAsync(() => connectionSettingsService.SaveRadarrAsync(request, cancellationToken));
     }
 
     [HttpPut("sonarr")]
     public async Task<IActionResult> SaveSonarr(SaveArrConnectionRequest request, CancellationToken cancellationToken)
     {
-        await connectionSettingsService.SaveSonarrAsync(request, cancellationToken);
-        return NoContent();
+        return await SaveAsync(() => connectionSettingsService.SaveSonarrAsync(request, cancellationToken));
     }
 
     [HttpPost("radarr/test")]
@@ -127,8 +123,7 @@ public sealed class ConnectionsController(
     [HttpPut("plex")]
     public async Task<IActionResult> SavePlex(SaveArrConnectionRequest request, CancellationToken cancellationToken)
     {
-        await connectionSettingsService.SavePlexAsync(request, cancellationToken);
-        return NoContent();
+        return await SaveAsync(() => connectionSettingsService.SavePlexAsync(request, cancellationToken));
     }
 
     [HttpPost("plex/test")]
@@ -140,8 +135,7 @@ public sealed class ConnectionsController(
     [HttpPut("jellyfin")]
     public async Task<IActionResult> SaveJellyfin(SaveArrConnectionRequest request, CancellationToken cancellationToken)
     {
-        await connectionSettingsService.SaveJellyfinAsync(request, cancellationToken);
-        return NoContent();
+        return await SaveAsync(() => connectionSettingsService.SaveJellyfinAsync(request, cancellationToken));
     }
 
     [HttpPost("jellyfin/test")]
@@ -155,6 +149,21 @@ public sealed class ConnectionsController(
     {
         var folders = await arrMediaCatalogClient.GetRootFoldersAsync(system, cancellationToken);
         return Ok(folders);
+    }
+
+    // Saves are refused when a request would reuse a stored secret against a different server.
+    private async Task<IActionResult> SaveAsync(Func<Task> save)
+    {
+        try
+        {
+            await save();
+        }
+        catch (SecretReuseRefusedException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+
+        return NoContent();
     }
 
     private static bool HasValue(string? value) => !string.IsNullOrWhiteSpace(value);

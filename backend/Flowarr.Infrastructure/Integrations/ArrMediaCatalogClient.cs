@@ -20,19 +20,19 @@ public sealed class ArrMediaCatalogClient(
 
     public async Task<ConnectionTestResult> TestAsync(string system, SaveArrConnectionRequest request, CancellationToken cancellationToken)
     {
-        var settings = await MergeSettingsAsync(system, request, cancellationToken);
-        if (string.IsNullOrWhiteSpace(settings.BaseUrl))
-        {
-            return ConnectionTestResult.Failure($"{system} base URL is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.ApiKey))
-        {
-            return ConnectionTestResult.Failure($"{system} API key is required.");
-        }
-
         try
         {
+            var settings = await MergeSettingsAsync(system, request, cancellationToken);
+            if (string.IsNullOrWhiteSpace(settings.BaseUrl))
+            {
+                return ConnectionTestResult.Failure($"{system} base URL is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.ApiKey))
+            {
+                return ConnectionTestResult.Failure($"{system} API key is required.");
+            }
+
             using var client = CreateHttpClient(settings);
             var response = await client.GetAsync("api/v3/system/status", cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -138,6 +138,14 @@ public sealed class ArrMediaCatalogClient(
         var saved = system.Equals("Sonarr", StringComparison.OrdinalIgnoreCase)
             ? await connectionSettingsService.GetSonarrAsync(cancellationToken)
             : await connectionSettingsService.GetRadarrAsync(cancellationToken);
+
+        SecretReusePolicy.EnsureSavedSecretStaysWithTarget(
+            request.ApiKey,
+            request.ClearApiKey,
+            saved.HasApiKey,
+            SecretReusePolicy.IsUrlChange(request.BaseUrl, saved.BaseUrl),
+            $"{system} API key",
+            "base URL");
 
         return saved with
         {

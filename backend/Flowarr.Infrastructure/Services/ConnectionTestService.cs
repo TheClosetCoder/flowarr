@@ -21,14 +21,14 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
 
     public async Task<ConnectionTestResult> TestTorrentClientAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        var settings = await MergeTorrentSettingsAsync(request, cancellationToken);
-        if (string.IsNullOrWhiteSpace(settings.BaseUrl))
-        {
-            return ConnectionTestResult.Failure("Torrent client base URL is required.");
-        }
-
         try
         {
+            var settings = await MergeTorrentSettingsAsync(request, cancellationToken);
+            if (string.IsNullOrWhiteSpace(settings.BaseUrl))
+            {
+                return ConnectionTestResult.Failure("Torrent client base URL is required.");
+            }
+
             return settings.ClientType.Equals("Deluge", StringComparison.OrdinalIgnoreCase)
                 ? await TestDelugeAsync(settings, cancellationToken)
                 : await TestQBittorrentAsync(settings, cancellationToken);
@@ -41,24 +41,24 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
 
     public async Task<ConnectionTestResult> TestSftpSeedboxAsync(SaveSftpSeedboxConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        var settings = await MergeSftpSettingsAsync(request, cancellationToken);
-        if (string.IsNullOrWhiteSpace(settings.Host))
-        {
-            return ConnectionTestResult.Failure("SFTP host is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.Username))
-        {
-            return ConnectionTestResult.Failure("SFTP username is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.Password) && string.IsNullOrWhiteSpace(settings.PrivateKeyPath))
-        {
-            return ConnectionTestResult.Failure("SFTP password or private key path is required.");
-        }
-
         try
         {
+            var settings = await MergeSftpSettingsAsync(request, cancellationToken);
+            if (string.IsNullOrWhiteSpace(settings.Host))
+            {
+                return ConnectionTestResult.Failure("SFTP host is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.Username))
+            {
+                return ConnectionTestResult.Failure("SFTP username is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.Password) && string.IsNullOrWhiteSpace(settings.PrivateKeyPath))
+            {
+                return ConnectionTestResult.Failure("SFTP password or private key path is required.");
+            }
+
             return await Task.Run(() =>
             {
                 using var client = CreateSftpClient(settings);
@@ -210,6 +210,14 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
     private async Task<QBittorrentConnectionSettings> MergeTorrentSettingsAsync(SaveQBittorrentConnectionRequest request, CancellationToken cancellationToken)
     {
         var saved = await connectionSettingsService.GetQBittorrentAsync(cancellationToken);
+        SecretReusePolicy.EnsureSavedSecretStaysWithTarget(
+            request.Password,
+            request.ClearPassword,
+            saved.HasPassword,
+            SecretReusePolicy.IsUrlChange(request.BaseUrl, saved.BaseUrl),
+            "torrent client password",
+            "base URL");
+
         return new QBittorrentConnectionSettings(
             request.Enabled,
             string.IsNullOrWhiteSpace(request.ClientType) ? saved.ClientType : request.ClientType,
@@ -222,6 +230,14 @@ public sealed class ConnectionTestService(IConnectionSettingsService connectionS
     private async Task<SftpSeedboxConnectionSettings> MergeSftpSettingsAsync(SaveSftpSeedboxConnectionRequest request, CancellationToken cancellationToken)
     {
         var saved = await connectionSettingsService.GetSftpSeedboxAsync(cancellationToken);
+        SecretReusePolicy.EnsureSavedSecretStaysWithTarget(
+            request.Password,
+            request.ClearPassword,
+            saved.HasPassword,
+            SecretReusePolicy.IsHostChange(request.Host, request.Port, saved.Host, saved.Port),
+            "SFTP password",
+            "host or port");
+
         return new SftpSeedboxConnectionSettings(
             request.Enabled,
             string.IsNullOrWhiteSpace(request.Host) ? saved.Host : request.Host,

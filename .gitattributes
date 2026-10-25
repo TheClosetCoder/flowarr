@@ -1,0 +1,2 @@
+# Shell scripts are copied into the Linux image as-is; CRLF would break the shebang.
+*.sh text eol=lf

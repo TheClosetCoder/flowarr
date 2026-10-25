@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Flowarr.Api.Controllers;
 
@@ -24,6 +25,7 @@ public sealed class AuthController(IAdminAuthService adminAuthService) : Control
 
     [HttpPost("setup")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> Setup(AuthRequest request, CancellationToken cancellationToken)
     {
         var created = await adminAuthService.CreateAdminAsync(request.Username, request.Password, cancellationToken);
@@ -38,6 +40,7 @@ public sealed class AuthController(IAdminAuthService adminAuthService) : Control
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login(AuthRequest request, CancellationToken cancellationToken)
     {
         if (!await adminAuthService.ValidateAsync(request.Username, request.Password, cancellationToken))
