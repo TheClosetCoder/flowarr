@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Flowarr.Infrastructure.Data;
+using Flowarr.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -114,6 +115,14 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<FlowarrDbContext>();
     dbContext.Database.Migrate();
+
+    // Hosted services only start in app.Run(), so nothing is running yet: any run still marked
+    // Running was left behind by a previous process and would otherwise look in-progress forever.
+    var interrupted = await scope.ServiceProvider.GetRequiredService<IJobRunService>().FailInterruptedRunsAsync();
+    if (interrupted > 0)
+    {
+        app.Logger.LogWarning("Marked {Count} job run(s) left Running by a previous process as interrupted", interrupted);
+    }
 }
 
 app.Run();

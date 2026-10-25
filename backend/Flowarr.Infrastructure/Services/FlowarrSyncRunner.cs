@@ -97,6 +97,11 @@ public static class FlowarrSyncRunner
                 if (file is null)
                 {
                     file = new MediaFile { Id = Guid.NewGuid(), Path = fileSnapshot.Path };
+                    // Add through the DbSet, not only the navigation: DetectChanges treats an entity it
+                    // discovers with its generated key already set as an existing row (Modified), so a
+                    // new file reached only via mediaItem.Files is sent as an UPDATE that matches nothing
+                    // and fails the whole sync with a DbUpdateConcurrencyException.
+                    dbContext.MediaFiles.Add(file);
                     mediaItem.Files.Add(file);
                 }
 
