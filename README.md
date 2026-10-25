@@ -84,6 +84,7 @@ Flowarr ships as a single prebuilt image published to GitHub Container Registry 
 docker run -d \
   --name flowarr \
   -p 8080:8080 \
+  -e PUID=1000 -e PGID=1000 \
   -v /mnt/media:/media \
   -v flowarr-data:/var/lib/flowarr/data \
   -v flowarr-keys:/var/lib/flowarr/keys \
@@ -91,6 +92,8 @@ docker run -d \
 ```
 
 Open `http://localhost:8080` and complete first-run admin setup. `flowarr-data` holds the SQLite database and `flowarr-keys` holds the credential-encryption key ring — keep both volumes across upgrades. Add further `-v /mnt/diskN/Folder:/media/Folder` mounts for additional media disks.
+
+Flowarr runs as the unprivileged user `PUID:PGID` (default `1000:1000`), not root. Set them to the owner of your media folders (`id -u` and `id -g` on the host), the same as you would for Radarr or Sonarr: Flowarr needs write access under `/media` for downloads and cleanup, and read access to any SFTP private key you mount. The container takes ownership of its own `flowarr-data` and `flowarr-keys` volumes at startup, so volumes created by older root-based images keep working after an upgrade.
 
 To pin a version instead of following `latest`, use a tag from the [Packages page](https://github.com/TheClosetCoder/flowarr/pkgs/container/flowarr) (e.g. `ghcr.io/theclosetcoder/flowarr:v1.2.0`).
 
@@ -120,6 +123,8 @@ Open `http://localhost:8080` for the dashboard, health at `http://localhost:8080
 Docker Compose reads these optional variables:
 
 ```bash
+FLOWARR_PUID=1000
+FLOWARR_PGID=1000
 FLOWARR_QBITTORRENT_BASE_URL=
 FLOWARR_QBITTORRENT_USERNAME=
 FLOWARR_QBITTORRENT_PASSWORD=
