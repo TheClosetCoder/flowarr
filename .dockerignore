@@ -1,0 +1,32 @@
+# Keep host build output and local tooling out of the image build context.
+# Without this, `COPY backend ./backend` overwrites the container's restore
+# output with the host's obj/ folders and `dotnet publish --no-restore` fails.
+
+# .NET build output
+**/bin
+**/obj
+.dotnet
+.nuget
+
+# Frontend dependencies and build output
+frontend/node_modules
+frontend/dist
+**/*.tsbuildinfo
+
+# VCS, editor and agent state
+.git
+.github
+.claude
+.config
+.vs
+.vscode
+.idea
+
+# Local data and secrets
+.env
+**/.env
+data
+**/*.db
+**/*.db-shm
+**/*.db-wal
+scripts
