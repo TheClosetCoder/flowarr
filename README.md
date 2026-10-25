@@ -156,7 +156,7 @@ Flowarr__AutoDownload__LocalImportPath=/media/import
 
 Flowarr can pull completed or seeding downloads from a remote seedbox over SFTP into one or more local media paths.
 
-You can configure Deluge or qBittorrent, SFTP seedbox, Radarr, Sonarr, Plex, and auto-download settings from the Connections page in the app. Deluge Web only needs its web password; qBittorrent can use username and password. Passwords, API keys, and key passphrases are encrypted before being stored in the SQLite database using ASP.NET Core Data Protection. The Docker Compose file persists the encryption key ring in the `flowarr-keys` volume and the database file in the `flowarr-data` volume so saved credentials and data remain readable after container rebuilds.
+You can configure Deluge or qBittorrent, SFTP seedbox, Radarr, Sonarr, Plex, and auto-download settings from the Connections page in the app. Deluge Web only needs its web password; qBittorrent can use username and password. Passwords, API keys, and key passphrases are encrypted before being stored in the SQLite database using ASP.NET Core Data Protection. A saved secret is only ever sent to the server it was saved for: when you change a connection's base URL, or the SFTP host or port, type its password or API key again. The Docker Compose file persists the encryption key ring in the `flowarr-keys` volume and the database file in the `flowarr-data` volume so saved credentials and data remain readable after container rebuilds.
 
 You can also seed defaults with `.env`:
 

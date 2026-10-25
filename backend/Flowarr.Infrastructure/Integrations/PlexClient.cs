@@ -12,19 +12,19 @@ public sealed class PlexClient(
 {
     public async Task<ConnectionTestResult> TestAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken)
     {
-        var settings = await MergeSettingsAsync(request, cancellationToken);
-        if (string.IsNullOrWhiteSpace(settings.BaseUrl))
-        {
-            return ConnectionTestResult.Failure("Plex base URL is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.ApiKey))
-        {
-            return ConnectionTestResult.Failure("Plex token is required.");
-        }
-
         try
         {
+            var settings = await MergeSettingsAsync(request, cancellationToken);
+            if (string.IsNullOrWhiteSpace(settings.BaseUrl))
+            {
+                return ConnectionTestResult.Failure("Plex base URL is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.ApiKey))
+            {
+                return ConnectionTestResult.Failure("Plex token is required.");
+            }
+
             using var client = CreateHttpClient(settings);
             var response = await client.GetAsync("identity", cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -168,6 +168,14 @@ public sealed class PlexClient(
     private async Task<ArrConnectionSettings> MergeSettingsAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken)
     {
         var saved = await connectionSettingsService.GetPlexAsync(cancellationToken);
+        SecretReusePolicy.EnsureSavedSecretStaysWithTarget(
+            request.ApiKey,
+            request.ClearApiKey,
+            saved.HasApiKey,
+            SecretReusePolicy.IsUrlChange(request.BaseUrl, saved.BaseUrl),
+            "Plex token",
+            "base URL");
+
         return saved with
         {
             Enabled = request.Enabled,

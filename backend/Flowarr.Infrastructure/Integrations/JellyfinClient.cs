@@ -14,19 +14,19 @@ public sealed class JellyfinClient(
 
     public async Task<ConnectionTestResult> TestAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken)
     {
-        var settings = await MergeSettingsAsync(request, cancellationToken);
-        if (string.IsNullOrWhiteSpace(settings.BaseUrl))
-        {
-            return ConnectionTestResult.Failure("Jellyfin base URL is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.ApiKey))
-        {
-            return ConnectionTestResult.Failure("Jellyfin API key is required.");
-        }
-
         try
         {
+            var settings = await MergeSettingsAsync(request, cancellationToken);
+            if (string.IsNullOrWhiteSpace(settings.BaseUrl))
+            {
+                return ConnectionTestResult.Failure("Jellyfin base URL is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.ApiKey))
+            {
+                return ConnectionTestResult.Failure("Jellyfin API key is required.");
+            }
+
             using var client = CreateHttpClient(settings);
             var response = await client.GetAsync("System/Info", cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -222,6 +222,14 @@ public sealed class JellyfinClient(
     private async Task<ArrConnectionSettings> MergeSettingsAsync(SaveArrConnectionRequest request, CancellationToken cancellationToken)
     {
         var saved = await connectionSettingsService.GetJellyfinAsync(cancellationToken);
+        SecretReusePolicy.EnsureSavedSecretStaysWithTarget(
+            request.ApiKey,
+            request.ClearApiKey,
+            saved.HasApiKey,
+            SecretReusePolicy.IsUrlChange(request.BaseUrl, saved.BaseUrl),
+            "Jellyfin API key",
+            "base URL");
+
         return saved with
         {
             Enabled = request.Enabled,
