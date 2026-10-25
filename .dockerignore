@@ -1,0 +1,11 @@
+# Local build output must not overwrite what the image restores and builds itself: a host's obj/
+# points NuGet at the host's package folder, and node_modules holds the host platform's binaries.
+**/bin/
+**/obj/
+frontend/node_modules/
+frontend/dist/
+.git/
+.claude/
+docker/.env
+docker/data/
+docker/mnt/

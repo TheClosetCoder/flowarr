@@ -93,7 +93,7 @@ docker run -d \
 
 Open `http://localhost:8080` and complete first-run admin setup. `flowarr-data` holds the SQLite database and `flowarr-keys` holds the credential-encryption key ring — keep both volumes across upgrades. Add further `-v /mnt/diskN/Folder:/media/Folder` mounts for additional media disks.
 
-Flowarr runs as the unprivileged user `PUID:PGID` (default `1000:1000`), not root. Set them to the owner of your media folders (`id -u` and `id -g` on the host), the same as you would for Radarr or Sonarr: Flowarr needs write access under `/media` for downloads and cleanup, and read access to any SFTP private key you mount. The container takes ownership of its own `flowarr-data` and `flowarr-keys` volumes at startup, so volumes created by older root-based images keep working after an upgrade.
+Flowarr runs as the unprivileged user `PUID:PGID` (default `1000:1000`), not root. Set them to the owner of your media folders (`id -u` and `id -g` on the host), the same as you would for Radarr or Sonarr: Flowarr needs write access under `/media` for downloads and cleanup, and read access to any SFTP private key you mount. The container takes ownership of its own `flowarr-data` and `flowarr-keys` volumes at startup, so volumes created by older root-based images keep working after an upgrade. If you start the container with `--user` instead, it skips that step and runs as that user directly, so the volumes must already be writable by it.
 
 To pin a version instead of following `latest`, use a tag from the [Packages page](https://github.com/TheClosetCoder/flowarr/pkgs/container/flowarr) (e.g. `ghcr.io/theclosetcoder/flowarr:v1.2.0`).
 
