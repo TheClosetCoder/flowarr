@@ -18,7 +18,7 @@
          CVE-2025-6965. Pin forward to 2.1.12 (SQLite 3.53.3); stay on 2.1.x, because the
          3.x line is a new major requiring SQLitePCLRaw.core 3.x. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
-    <PackageReference Include="SSH.NET" Version="2024.2.0" />
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
 
   <ItemGroup>
