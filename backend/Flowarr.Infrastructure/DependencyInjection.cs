@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<ArrMediaCatalogClient>();
         services.AddScoped<IMediaCatalogClient>(provider => provider.GetRequiredService<ArrMediaCatalogClient>());
         services.AddScoped<PlexClient>();
+        services.AddScoped<JellyfinClient>();
         services.AddScoped<IRemoteFileTransferClient, SftpSeedboxTransferClient>();
         services.AddScoped<LocalStorageScanner>();
         services.AddScoped<SeedboxStorageScanner>();

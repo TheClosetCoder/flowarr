@@ -41,7 +41,7 @@ public sealed class PlexClient(
         }
     }
 
-    public async Task<IReadOnlyCollection<PlexLibraryItem>> GetLibraryItemsAsync(Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<MediaLibraryItem>> GetLibraryItemsAsync(Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
         var settings = await connectionSettingsService.GetPlexAsync(cancellationToken);
         if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.BaseUrl) || string.IsNullOrWhiteSpace(settings.ApiKey))
@@ -50,7 +50,7 @@ public sealed class PlexClient(
         }
 
         using var client = CreateHttpClient(settings);
-        var items = new List<PlexLibraryItem>();
+        var items = new List<MediaLibraryItem>();
 
         var sections = await client.GetFromJsonAsync<PlexSectionsResponse>("library/sections", cancellationToken);
         foreach (var section in sections?.MediaContainer?.Directory ?? [])
@@ -128,7 +128,7 @@ public sealed class PlexClient(
         return items;
     }
 
-    private static IEnumerable<PlexLibraryItem> ToLibraryItems(PlexMetadataItem metadata, string title, string mediaType, string? seriesTitle)
+    private static IEnumerable<MediaLibraryItem> ToLibraryItems(PlexMetadataItem metadata, string title, string mediaType, string? seriesTitle)
     {
         var lastViewedAt = metadata.LastViewedAt is long lastViewed ? DateTimeOffset.FromUnixTimeSeconds(lastViewed) : (DateTimeOffset?)null;
         var addedAt = metadata.AddedAt is long added ? DateTimeOffset.FromUnixTimeSeconds(added) : (DateTimeOffset?)null;
@@ -143,8 +143,11 @@ public sealed class PlexClient(
                     continue;
                 }
 
-                yield return new PlexLibraryItem(
-                    metadata.RatingKey, title, part.File, part.Size ?? 0, viewCount, lastViewedAt, addedAt,
+                // "ratingkey:" prefix keeps this ItemKey (and the DuplicateGroupKey persisted
+                // from it) byte-identical to what pre-Jellyfin versions stored, while making it
+                // impossible to collide with Jellyfin's "jellyfin:"-prefixed keys.
+                yield return new MediaLibraryItem(
+                    $"ratingkey:{metadata.RatingKey}", title, part.File, part.Size ?? 0, viewCount, lastViewedAt, addedAt,
                     mediaType, seriesTitle, metadata.ParentIndex, metadata.Index);
             }
         }

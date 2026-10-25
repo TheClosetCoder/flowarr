@@ -4,7 +4,7 @@ For the live, interactive version — where you can suggest ideas, upvote existi
 
 ## Near term
 - [ ] Unraid Community Apps template
-- [ ] Jellyfin integration
+- [x] Jellyfin integration
 
 ## Medium term
 - [ ] TBD

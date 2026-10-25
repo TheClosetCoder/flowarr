@@ -32,21 +32,20 @@ More views in [Screenshots](#screenshots).
 - Uses an embedded SQLite database through Entity Framework Core — no separate database container to run.
 - Includes a React, TypeScript, and Tailwind frontend.
 - Tracks media items, downloads, media files, storage locations, cleanup candidates, and audit logs.
-- Runs scheduled sync jobs through .NET hosted services and records job history, including live progress for long-running jobs (e.g. Plex library scans).
+- Runs scheduled sync jobs through .NET hosted services and records job history, including live progress for long-running jobs (e.g. media library scans).
 - Shows no torrent or media integration data until real integrations are configured.
 - Can auto-download completed seedbox files over SFTP into configured local media paths, and lets you cancel a queued or in-flight transfer directly from the UI (a cancelled in-flight transfer's partial local file is deleted to reclaim space).
-- Lets you configure Deluge or qBittorrent, SFTP seedbox, Radarr, Sonarr, Plex, and auto-download settings from the app.
+- Lets you configure Deluge or qBittorrent, SFTP seedbox, Radarr, Sonarr, Plex, Jellyfin, and auto-download settings from the app.
 - Separates seedbox download roots from imported media roots, and groups the Storage page by whether each folder backs a download rule or is just being monitored for free space.
 - Reports accurate free space for both local disks (resolves the actual mount backing a path, not just the container's root filesystem) and, optionally, your real SFTP account quota instead of the shared seedbox host's total disk size.
-- Generates local-disk cleanup recommendations from your Plex watch history (unwatched/stale titles, duplicate versions of the same title) with manual approval and dry-run safety by default.
+- Generates local-disk cleanup recommendations from your Plex and/or Jellyfin watch history (unwatched/stale titles, duplicate versions of the same title) with manual approval and dry-run safety by default.
 - Includes first-run single-admin authentication.
 
 ## What Flowarr Does Not Do
 
-- It does not replace Radarr, Sonarr, Plex, or qBittorrent.
+- It does not replace Radarr, Sonarr, Plex, Jellyfin, or qBittorrent.
 - It does not automatically delete files.
 - It does not make uncertain matches silently safe.
-- It does not integrate with Jellyfin yet.
 
 ## Screenshots
 
@@ -56,11 +55,11 @@ Click any shot to view it full size. The dashboard is at the top of this page �
 
 [![Flowarr storage page](docs/screenshots/storage.png)](docs/screenshots/storage.png)
 
-**Cleanup** — Plex-derived duplicate and stale candidates, with the kept copy chosen explicitly, confidence shown, and dry-run on by default.
+**Cleanup** — media-server-derived duplicate and stale candidates, with the kept copy chosen explicitly, confidence shown, and dry-run on by default.
 
 [![Flowarr cleanup page](docs/screenshots/cleanup.png)](docs/screenshots/cleanup.png)
 
-**Settings** — per-integration configuration for the torrent client, SFTP, Radarr/Sonarr, and Plex, with a "Test connection" button and secrets stored encrypted.
+**Settings** — per-integration configuration for the torrent client, SFTP, Radarr/Sonarr, Plex, and Jellyfin, with a "Test connection" button and secrets stored encrypted.
 
 [![Flowarr settings page](docs/screenshots/connections.png)](docs/screenshots/connections.png)
 
@@ -214,15 +213,17 @@ volumes:
 
 ## Cleanup Rules
 
-Cleanup targets **local disk space**, not the seedbox (the seedbox is assumed to be temporary storage, not something Cleanup needs to manage). It requires a Plex connection (Connections → Services → Plex, with a base URL and token) — Plex's own library data gives Flowarr the exact local file path, watch count, last-viewed date, and (via multiple `Media` entries under one item) a built-in signal for duplicate physical copies of the same title, without needing Radarr/Sonarr at all.
+Cleanup targets **local disk space**, not the seedbox (the seedbox is assumed to be temporary storage, not something Cleanup needs to manage). It requires a media server connection — Plex (Connections → Plex, with a base URL and token), Jellyfin (Connections → Jellyfin, with a base URL and API key), or both. The server's own library data gives Flowarr the exact local file path, watch count, last-viewed date, and (via multiple `Media` entries / `MediaSources` under one item) a built-in signal for duplicate physical copies of the same title, without needing Radarr/Sonarr at all.
 
-Clicking "Generate recommendations" runs as a background job and shows live progress in the UI — Plex requires one API call per TV series to fetch episode data, so a large TV library can take a while.
+When both servers are configured and index the same folders, each file is only counted once: a title counts as watched if it was watched on either server, and the most recent view wins. Jellyfin watch state is combined across all Jellyfin users the same way.
+
+Clicking "Generate recommendations" runs as a background job and shows live progress in the UI — Plex requires one API call per TV series to fetch episode data, and Jellyfin one pass per user, so a large library can take a while.
 
 A local file is suggested for cleanup when:
 
-- **Duplicate version**: Plex has matched multiple physical copies to the same title (multiple `Media` entries on one item). The largest copy is kept; the rest are flagged (`Certain` confidence).
+- **Duplicate version**: the media server has matched multiple physical copies to the same title (multiple `Media` entries on one Plex item, or multiple `MediaSources` on one Jellyfin item). The largest copy is kept; the rest are flagged (`Certain` confidence).
 - **Stale**: never watched and added more than the configured "stale after" threshold ago, or watched but not viewed again within that threshold (default 90 days, configurable on the Cleanup page; `Certain` confidence).
-- **Possible duplicate title**: the same normalized title appears under separate Plex entries that Plex itself did not merge (`Uncertain` confidence — needs manual review, since this is a weaker signal than the Media-group case above).
+- **Possible duplicate title**: the same normalized title appears under separate library entries that the server itself did not merge (`Uncertain` confidence — needs manual review, since this is a weaker signal than the version-group case above).
 
 Safety rules:
 
@@ -233,7 +234,7 @@ Safety rules:
 - Every approval, rejection, or delete is written to the audit log.
 - Uncertain matches are clearly marked.
 
-Note: candidate paths come from Plex's own view of the filesystem, so Plex and Flowarr need to see the same file paths (e.g. both mounting `/media` the same way) for candidates to resolve to real, deletable files — Flowarr silently skips anything it can't verify exists rather than presenting an unusable candidate.
+Note: candidate paths come from the media server's own view of the filesystem, so the server and Flowarr need to see the same file paths (e.g. both mounting `/media` the same way) for candidates to resolve to real, deletable files — Flowarr silently skips anything it can't verify exists rather than presenting an unusable candidate.
 
 ## App Icon & Add to Home Screen
 
@@ -277,8 +278,7 @@ docker/
 
 - Unconfigured integrations return no data.
 - Cleanup real deletion is guarded but still intentionally conservative; keep dry-run enabled unless you have verified roots and paths.
-- Jellyfin integration remains future work (Plex is supported).
-- Cleanup candidate paths depend on Plex and Flowarr resolving the same file paths (see Cleanup Rules above).
+- Cleanup candidate paths depend on the media server and Flowarr resolving the same file paths (see Cleanup Rules above).
 
 ## License
 

@@ -562,7 +562,7 @@ export function Cleanup({ candidates, setCandidates }: { candidates: CleanupCand
           <div className="rounded-md border border-line p-3">
             <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
               Movies &amp; ungrouped
-              <span className="ml-2 font-normal normal-case text-muted/70">Plex didn't report a show/season for these - includes real movies and any TV episode Plex returned without series info.</span>
+              <span className="ml-2 font-normal normal-case text-muted/70">The media server didn't report a show/season for these - includes real movies and any TV episode returned without series info.</span>
             </p>
             {renderLeaf(tree.movies)}
           </div>
